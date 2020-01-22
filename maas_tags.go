@@ -25,7 +25,7 @@ func nodeTagsUpdate(maas *gomaasapi.MAASObject, system_id string, tag_name strin
 	tagObject, err := maas.GetSubObject("tags").GetSubObject(tag_name).Get()
 	if err != nil {
 		// create tag if it doesn't exist
-		log.Println("[ERROR] [nodeTagsUpdate] Tag %s does not exist", tag_name)
+		log.Printf("[ERROR] [nodeTagsUpdate] Tag %s does not exist", tag_name)
 		err := tagCreate(maas, tag_name)
 		if err != nil {
 			return err

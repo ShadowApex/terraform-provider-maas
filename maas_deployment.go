@@ -9,6 +9,7 @@ import (
 
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
+	"github.com/juju/gomaasapi"
 )
 
 // resourceMAASDeploymentCreate This function doesn't really *create* a new node but, power an already registered
@@ -67,8 +68,8 @@ func resourceMAASDeploymentCreate(d *schema.ResourceData, meta interface{}) erro
 
 	log.Printf("[DEBUG] [resourceMAASDeploymentCreate] Waiting for deployment (%s) to become active\n", d.Id())
 	stateConf := &resource.StateChangeConf{
-		Pending:    []string{"9:"},
-		Target:     []string{"6:"},
+		Pending:    []string{gomaasapi.NodeStatusDeploying},
+		Target:     []string{gomaasapi.NodeStatusDeployed},
 		Refresh:    getNodeStatus(meta.(*Config).MAASObject, d.Id()),
 		Timeout:    25 * time.Minute,
 		Delay:      10 * time.Second,
@@ -152,8 +153,8 @@ func resourceMAASDeploymentDelete(d *schema.ResourceData, meta interface{}) erro
 	}
 
 	stateConf := &resource.StateChangeConf{
-		Pending:    []string{"6:", "12:", "14:"},
-		Target:     []string{"4:"},
+		Pending:    []string{gomaasapi.NodeStatusDeployed, gomaasapi.NodeStatusReleasing, gomaasapi.NodeStatusDiskErasing},
+		Target:     []string{gomaasapi.NodeStatusReady},
 		Refresh:    getNodeStatus(meta.(*Config).MAASObject, d.Id()),
 		Timeout:    30 * time.Minute,
 		Delay:      10 * time.Second,
@@ -171,7 +172,7 @@ func resourceMAASDeploymentDelete(d *schema.ResourceData, meta interface{}) erro
 		params.Set("hostname", "")
 		err := nodeUpdate(meta.(*Config).MAASObject, d.Id(), params)
 		if err != nil {
-			log.Println("[DEBUG] Unable to reset hostname: %s", err)
+			log.Printf("[DEBUG] Unable to reset hostname: %v", err)
 		}
 	}
 

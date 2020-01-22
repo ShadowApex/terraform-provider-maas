@@ -309,3 +309,49 @@ func resourceMAASDeployment() *schema.Resource {
 		},
 	}
 }
+
+// resourceMAASNode creates a new terraform schema resource
+func resourceMAASNode() *schema.Resource {
+	log.Println("[DEBUG] [resourceMAASNode] Initializing data structure")
+	return &schema.Resource{
+		Create: resourceMAASNodeCreate,
+		Read:   resourceMAASNodeRead,
+		Update: resourceMAASNodeUpdate,
+		Delete: resourceMAASNodeDelete,
+
+		SchemaVersion: 1,
+
+		Schema: map[string]*schema.Schema{
+			"mac_address": {
+				Type:     schema.TypeString,
+				Required: true,
+				ForceNew: true,
+			},
+			"domain": {
+				Type:     schema.TypeString,
+				Required: true,
+				ForceNew: false,
+			},
+			"hostname": {
+				Type:     schema.TypeString,
+				Required: true,
+				ForceNew: false,
+			},
+			"tags": {
+				Type:     schema.TypeList,
+				Optional: true,
+				ForceNew: false,
+				Elem:     &schema.Schema{Type: schema.TypeString},
+			},
+
+			/*
+			   * interface (op=link_subnet)
+			     * subnet
+			     * mode
+			   * power management
+			*/
+		},
+	}
+}
+
+// TODO: add maas_node schema

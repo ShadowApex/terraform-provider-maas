@@ -9,7 +9,7 @@ import (
 )
 
 func TestMaasListAllNodes(t *testing.T) {
-	authClient, err := gomaasapi.NewAuthenticatedClient("http://example.com/", "a:b:c", "1.0")
+	authClient, err := gomaasapi.NewAuthenticatedClient("http://example.com/MAAS/api/1.0", "a:b:c")
 	if err != nil {
 		t.Fail()
 	}
@@ -19,17 +19,17 @@ func TestMaasListAllNodes(t *testing.T) {
 }
 
 func TestMaasGetSingleNode(t *testing.T) {
-	authClient, err := gomaasapi.NewAuthenticatedClient("http://example.com/", "a:b:c", "1.0")
+	authClient, err := gomaasapi.NewAuthenticatedClient("http://example.com/MAAS/api/1.0", "a:b:c")
 	if err != nil {
 		t.Fail()
 	}
-	if _, err := maasGetSingleNode(gomaasapi.NewMAAS(*authClient), "system_id"); err == nil {
+	if _, err := maasGetSingleNodeByID(gomaasapi.NewMAAS(*authClient), "system_id"); err == nil {
 		t.Fail()
 	}
 }
 
 func TestMaasAllocateNodes(t *testing.T) {
-	authClient, err := gomaasapi.NewAuthenticatedClient("http://example.com/", "a:b:c", "1.0")
+	authClient, err := gomaasapi.NewAuthenticatedClient("http://example.com/MAAS/api/1.0", "a:b:c")
 	if err != nil {
 		t.Fail()
 	}
@@ -39,17 +39,17 @@ func TestMaasAllocateNodes(t *testing.T) {
 }
 
 func TestMaasReleaseNode(t *testing.T) {
-	authClient, err := gomaasapi.NewAuthenticatedClient("http://example.com/", "a:b:c", "1.0")
+	authClient, err := gomaasapi.NewAuthenticatedClient("http://example.com/MAAS/api/1.0", "a:b:c")
 	if err != nil {
 		t.Fail()
 	}
-	if err := maasReleaseNode(gomaasapi.NewMAAS(*authClient), "system_id"); err == nil {
+	if err := maasReleaseNode(gomaasapi.NewMAAS(*authClient), "system_id", url.Values{}); err == nil {
 		t.Fail()
 	}
 }
 
 func TestToNodeInfo(t *testing.T) {
-	authClient, err := gomaasapi.NewAuthenticatedClient("http://example.com/", "a:b:c", "1.0")
+	authClient, err := gomaasapi.NewAuthenticatedClient("http://example.com/MAAS/api/1.0", "a:b:c")
 	if err != nil {
 		t.Fail()
 	}
@@ -59,7 +59,7 @@ func TestToNodeInfo(t *testing.T) {
 }
 
 func TestGetNodeStatus(t *testing.T) {
-	authClient, err := gomaasapi.NewAuthenticatedClient("http://example.com/", "a:b:c", "1.0")
+	authClient, err := gomaasapi.NewAuthenticatedClient("http://example.com/MAAS/api/1.0", "a:b:c")
 	if err != nil {
 		t.Fail()
 	}
@@ -69,17 +69,17 @@ func TestGetNodeStatus(t *testing.T) {
 }
 
 func TestGetSingleNode(t *testing.T) {
-	authClient, err := gomaasapi.NewAuthenticatedClient("http://example.com/", "a:b:c", "1.0")
+	authClient, err := gomaasapi.NewAuthenticatedClient("http://example.com/MAAS/api/1.0", "a:b:c")
 	if err != nil {
 		t.Fail()
 	}
-	if _, err := getSingleNode(gomaasapi.NewMAAS(*authClient), "system_id"); err == nil {
+	if _, err := getSingleNodeByID(gomaasapi.NewMAAS(*authClient), "system_id"); err == nil {
 		t.Fail()
 	}
 }
 
 func TestGetAllNodes(t *testing.T) {
-	authClient, err := gomaasapi.NewAuthenticatedClient("http://example.com/", "a:b:c", "1.0")
+	authClient, err := gomaasapi.NewAuthenticatedClient("http://example.com/MAAS/api/1.0", "a:b:c")
 	if err != nil {
 		t.Fail()
 	}
@@ -89,7 +89,7 @@ func TestGetAllNodes(t *testing.T) {
 }
 
 func TestNodeDo(t *testing.T) {
-	authClient, err := gomaasapi.NewAuthenticatedClient("http://example.com/", "a:b:c", "1.0")
+	authClient, err := gomaasapi.NewAuthenticatedClient("http://example.com/MAAS/api/1.0", "a:b:c")
 	if err != nil {
 		t.Fail()
 	}
@@ -99,7 +99,7 @@ func TestNodeDo(t *testing.T) {
 }
 
 func TestNodesAllocate(t *testing.T) {
-	authClient, err := gomaasapi.NewAuthenticatedClient("http://example.com/", "a:b:c", "1.0")
+	authClient, err := gomaasapi.NewAuthenticatedClient("http://example.com/MAAS/api/1.0", "a:b:c")
 	if err != nil {
 		t.Fail()
 	}
@@ -109,11 +109,11 @@ func TestNodesAllocate(t *testing.T) {
 }
 
 func TestNodesRelease(t *testing.T) {
-	authClient, err := gomaasapi.NewAuthenticatedClient("http://example.com/", "a:b:c", "1.0")
+	authClient, err := gomaasapi.NewAuthenticatedClient("http://example.com/MAAS/api/1.0", "a:b:c")
 	if err != nil {
 		t.Fail()
 	}
-	if err := nodeRelease(gomaasapi.NewMAAS(*authClient), "system_id"); err == nil {
+	if err := nodeRelease(gomaasapi.NewMAAS(*authClient), "system_id", url.Values{}); err == nil {
 		t.Fail()
 	}
 }
