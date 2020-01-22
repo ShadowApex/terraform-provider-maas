@@ -11,9 +11,9 @@ import (
 	"github.com/hashicorp/terraform/helper/schema"
 )
 
-// resourceMAASInstanceCreate This function doesn't really *create* a new node but, power an already registered
-func resourceMAASInstanceCreate(d *schema.ResourceData, meta interface{}) error {
-	log.Println("[DEBUG] [resourceMAASInstanceCreate] Launching new maas_instance")
+// resourceMAASDeploymentCreate This function doesn't really *create* a new node but, power an already registered
+func resourceMAASDeploymentCreate(d *schema.ResourceData, meta interface{}) error {
+	log.Println("[DEBUG] [resourceMAASDeploymentCreate] Launching new maas_deployment")
 
 	/*
 		According to the MAAS API documentation here: https://maas.ubuntu.com/docs/api.html
@@ -23,13 +23,13 @@ func resourceMAASInstanceCreate(d *schema.ResourceData, meta interface{}) error 
 
 	constraints, err := parseConstraints(d)
 	if err != nil {
-		log.Println("[ERROR] [resourceMAASInstanceCreate] Unable to parse constraints.")
+		log.Println("[ERROR] [resourceMAASDeploymentCreate] Unable to parse constraints.")
 		return err
 	}
 
 	nodeObj, err := nodesAllocate(meta.(*Config).MAASObject, constraints)
 	if err != nil {
-		log.Println("[ERROR] [resourceMAASInstanceCreate] Unable to allocate nodes")
+		log.Println("[ERROR] [resourceMAASDeploymentCreate] Unable to allocate nodes")
 		return err
 	}
 
@@ -57,7 +57,7 @@ func resourceMAASInstanceCreate(d *schema.ResourceData, meta interface{}) error 
 	}
 
 	if err := nodeDo(meta.(*Config).MAASObject, d.Id(), "deploy", node_params); err != nil {
-		log.Printf("[ERROR] [resourceMAASInstanceCreate] Unable to power up node: %s\n", d.Id())
+		log.Printf("[ERROR] [resourceMAASDeploymentCreate] Unable to power up node: %s\n", d.Id())
 		// unable to perform action, release the node
 		if err := nodeRelease(meta.(*Config).MAASObject, d.Id(), url.Values{}); err != nil {
 			log.Printf("[DEBUG] Unable to release node")
@@ -65,7 +65,7 @@ func resourceMAASInstanceCreate(d *schema.ResourceData, meta interface{}) error 
 		return err
 	}
 
-	log.Printf("[DEBUG] [resourceMAASInstanceCreate] Waiting for instance (%s) to become active\n", d.Id())
+	log.Printf("[DEBUG] [resourceMAASDeploymentCreate] Waiting for deployment (%s) to become active\n", d.Id())
 	stateConf := &resource.StateChangeConf{
 		Pending:    []string{"9:"},
 		Target:     []string{"6:"},
@@ -79,7 +79,7 @@ func resourceMAASInstanceCreate(d *schema.ResourceData, meta interface{}) error 
 		if err := nodeRelease(meta.(*Config).MAASObject, d.Id(), url.Values{}); err != nil {
 			log.Printf("[DEBUG] Unable to release node")
 		}
-		return fmt.Errorf("[ERROR] [resourceMAASInstanceCreate] Error waiting for instance (%s) to become deployed: %s", d.Id(), err)
+		return fmt.Errorf("[ERROR] [resourceMAASDeploymentCreate] Error waiting for deployment (%s) to become deployed: %s", d.Id(), err)
 	}
 
 	// update node
@@ -104,31 +104,31 @@ func resourceMAASInstanceCreate(d *schema.ResourceData, meta interface{}) error 
 		}
 	}
 
-	return resourceMAASInstanceUpdate(d, meta)
+	return resourceMAASDeploymentUpdate(d, meta)
 }
 
-// resourceMAASInstanceRead read instance information from a maas node
+// resourceMAASDeploymentRead read deployment information from a maas node
 // TODO: remove or do something
-func resourceMAASInstanceRead(d *schema.ResourceData, meta interface{}) error {
-	log.Printf("[DEBUG] Reading instance (%s) information.\n", d.Id())
+func resourceMAASDeploymentRead(d *schema.ResourceData, meta interface{}) error {
+	log.Printf("[DEBUG] Reading deployment (%s) information.\n", d.Id())
 	return nil
 }
 
-// resourceMAASInstanceUpdate update an instance in terraform state
-func resourceMAASInstanceUpdate(d *schema.ResourceData, meta interface{}) error {
-	log.Printf("[DEBUG] [resourceMAASInstanceUpdate] Modifying instance %s\n", d.Id())
+// resourceMAASDeploymentUpdate update an deployment in terraform state
+func resourceMAASDeploymentUpdate(d *schema.ResourceData, meta interface{}) error {
+	log.Printf("[DEBUG] [resourceMAASDeploymentUpdate] Modifying deployment %s\n", d.Id())
 
 	d.Partial(true)
 
 	d.Partial(false)
 
-	log.Printf("[DEBUG] Done Modifying instance %s", d.Id())
-	return resourceMAASInstanceRead(d, meta)
+	log.Printf("[DEBUG] Done Modifying deployment %s", d.Id())
+	return resourceMAASDeploymentRead(d, meta)
 }
 
-// resourceMAASInstanceDelete This function doesn't really *delete* a maas managed instance but releases (read, turns off) the node.
-func resourceMAASInstanceDelete(d *schema.ResourceData, meta interface{}) error {
-	log.Printf("[DEBUG] Deleting instance %s\n", d.Id())
+// resourceMAASDeploymentDelete This function doesn't really *delete* a maas managed deployment but releases (read, turns off) the node.
+func resourceMAASDeploymentDelete(d *schema.ResourceData, meta interface{}) error {
+	log.Printf("[DEBUG] Deleting deployment %s\n", d.Id())
 	release_params := url.Values{}
 
 	if release_erase, ok := d.GetOk("release_erase"); ok {
@@ -162,7 +162,7 @@ func resourceMAASInstanceDelete(d *schema.ResourceData, meta interface{}) error 
 
 	if _, err := stateConf.WaitForState(); err != nil {
 		return fmt.Errorf(
-			"[ERROR] [resourceMAASInstanceCreate] Error waiting for instance (%s) to become ready: %s", d.Id(), err)
+			"[ERROR] [resourceMAASDeploymentCreate] Error waiting for deployment (%s) to become ready: %s", d.Id(), err)
 	}
 
 	// remove deploy hostname if set
@@ -185,7 +185,7 @@ func resourceMAASInstanceDelete(d *schema.ResourceData, meta interface{}) error 
 		}
 	}
 
-	log.Printf("[DEBUG] [resourceMAASInstanceDelete] Node (%s) released", d.Id())
+	log.Printf("[DEBUG] [resourceMAASDeploymentDelete] Node (%s) released", d.Id())
 
 	d.SetId("")
 

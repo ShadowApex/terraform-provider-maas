@@ -8,14 +8,14 @@ import (
 	"github.com/hashicorp/terraform/helper/schema"
 )
 
-// resourceMAASInstance creates a new terraform schema resource
-func resourceMAASInstance() *schema.Resource {
-	log.Println("[DEBUG] [resourceMAASInstance] Initializing data structure")
+// resourceMAASDeployment creates a new terraform schema resource
+func resourceMAASDeployment() *schema.Resource {
+	log.Println("[DEBUG] [resourceMAASDeployment] Initializing data structure")
 	return &schema.Resource{
-		Create: resourceMAASInstanceCreate,
-		Read:   resourceMAASInstanceRead,
-		Update: resourceMAASInstanceUpdate,
-		Delete: resourceMAASInstanceDelete,
+		Create: resourceMAASDeploymentCreate,
+		Read:   resourceMAASDeploymentRead,
+		Update: resourceMAASDeploymentUpdate,
+		Delete: resourceMAASDeploymentDelete,
 
 		SchemaVersion: 1,
 
