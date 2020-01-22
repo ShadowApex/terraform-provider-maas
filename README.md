@@ -1,7 +1,7 @@
 # terraform-provider-maas
 
 ## Description
-A simple Terraform provider for MAAS.  This is a work in progress and by no means should be considered production quality work.  The current version supports the allocation, power up, power down and release of nodes already registered with MAAS.  I think this is the main usage for MAAS and will cover the majority of use cases out there.  I'll look into adding more functionality in the future.
+A simple Terraform provider for MAAS.  This is a work in progress and by no means should be considered production quality work.  The current version supports commisioning, allocation, power up, power down and release of nodes already registered with MAAS.  I think this is the main usage for MAAS and will cover the majority of use cases out there.  I'll look into adding more functionality in the future.
 
 ## Requirements
 * [Terraform](https://github.com/hashicorp/terraform)
@@ -25,8 +25,48 @@ provider "maas" {
 }
 ```
 
-### Resource Configuration (maas_instance)
-This provider is only able to deploy and release nodes already registered and configured in MAAS.  The selection mechanism for the nodes is a subset of criteria described in the MAAS API (https://maas.ubuntu.com/docs/api.html#nodes).  Currently, this provider supports:
+### Resource Configuration
+
+This provider is able to commission and image nodes. Although a `machine` is a single resource in MaaS these two operations are broken into two resource types in Terraform. This is primarily to reduce the cycle time for re-imaging where a re-commision is not neccessary. 
+
+#### `maas_node`
+
+The `maas_node` type manages transitioning a node currently in the "New" state to the "Ready" state so it can be imaged using a `maas_deployment` resource. This resource will wait up to 1 minute for a node to appear in MaaS to allow for newly created nodes (for example, libvirt VMs that PXE boot) to be registered after an initial boot.
+
+##### Commision a specific machine in MaaS
+
+```
+resource "maas_node" "vm" {
+  mac_address = "00:11:22:33:44:55"
+  hostname    = "my-vm"
+  domain      = "domain.com"
+  tags        = ["terraform"]
+}
+```
+
+For VMs managed in another Terraform provider you should create a resource dependency to ensure that the commission step happens after the VM has started. For example, when using the [libvirt provider](https://github.com/dmacvicar/terraform-provider-libvirt):
+
+```
+resource "libvirt_domain" "vm1" {
+  name = "myvm"
+  network_interface {
+      mac            = "00:11:22:33:44:55"
+  }
+  ...
+}
+
+resource "maas_node" "myvm" {
+  mac_address = libvirt_domain.vm1.network_interface.mac
+  hostname    = libvirt_domain.vm1.name
+  domain      = "domain.com"
+  tags        = ["terraform", "vm"]
+}
+```
+
+
+#### `maas_deployment`
+
+The selection mechanism for the nodes is a subset of criteria described in the MAAS API (https://maas.ubuntu.com/docs/api.html#nodes).  Currently, this provider supports:
 
 - **hostnames**: Host name to try to allocate.
 - **architecture**: Architecture of the requested machine: ie: amd64/generic
@@ -36,31 +76,43 @@ This provider is only able to deploy and release nodes already registered and co
 
 The above constraints parameters can be used to acquire a node that possesses certain characteristics. All the constraints are optional and when multiple constraints are provided, they are combined using ‘AND’ semantics.  In the absence of any constraints, a random node will be selected and deployed.  The examples in the next section attempt to explain how to use the resource.
 
-#### `maas_instance`
+
 ##### Deploy a Random node
 ```
-resource "maas_instance" "maas_single_random_node" {
+resource "maas_deployment" "maas_single_random_node" {
 	count = 1
 }
 ```
 
 ##### Deploy three random nodes
 ```
-resource "maas_instance" "maas_three_random_nodes" {
+resource "maas_deployment" "maas_three_random_nodes" {
 	count = 3
 }
 ```
 
-##### Deploy a node named "node-1"
+##### Deploy a node on a machine named "node-1"
+
+Deploying to a specific node should include a dependency to ensure that the
+node has been commissioned before being imaged. This can be accomplished with
+a hostname value reference.
+
 ```
-resource "maas_instance" "maas_node_1" {
+resource "maas_node" "maas_node_1" {
 	hostname = "node-1"
 }
 ```
 
+```
+resource "maas_deployment" "maas_node_1" {
+	hostname =  maas_node.maas_node_1.hostname
+}
+```
+
+
 ##### Deploy three nodes with at least 8G of RAM
 ```
-resource "maas_instance" "maas_three_nodes_8g" {
+resource "maas_deployment" "maas_three_nodes_8g" {
 	memory = "8G"
 	count = 3
 }
