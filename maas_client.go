@@ -68,6 +68,17 @@ func maasGetSingleNodeByMAC(maas *gomaasapi.MAASObject, macAddress string) (goma
 	return nodeObjectsArray[0].GetMAASObject()
 }
 
+// maasDeleteNode This is a *low level* function that deletes the provided maas node
+func maasDeleteNode(maas *gomaasapi.MAASObject, system_id string) error {
+	log.Printf("[DEBUG] [maasDeleteNode] Deleting node with id %s", system_id)
+	err := maas.GetSubObject("machines").GetSubObject(system_id).Delete()
+	if err != nil {
+		log.Println("[ERROR] [maasDeleteNode] Unable to delete node ... bailing")
+		return err
+	}
+	return nil
+}
+
 // maasAllocateNodes This is a *low level* function that attempts to acquire a MAAS managed node for future deployment.
 func maasAllocateNodes(maas *gomaasapi.MAASObject, params url.Values) (gomaasapi.MAASObject, error) {
 	log.Printf("[DEBUG] [maasAllocateNodes] Allocating one or more nodes with following params: %+v", params)
@@ -206,6 +217,11 @@ func nodesAllocate(maas *gomaasapi.MAASObject, params url.Values) (*NodeInfo, er
 // nodeRelease release a node back into the ready state
 func nodeRelease(maas *gomaasapi.MAASObject, system_id string, params url.Values) error {
 	return maasReleaseNode(maas, system_id, params)
+}
+
+// nodeDestroy release a node back into the ready state
+func nodeDelete(maas *gomaasapi.MAASObject, system_id string) error {
+	return maasDeleteNode(maas, system_id)
 }
 
 // nodeUpdate update a node with new information

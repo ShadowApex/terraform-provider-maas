@@ -116,7 +116,7 @@ func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
 
 	log.Printf("[DEBUG] [resourceMAASMachineCreate] Waiting for commisioning (%s) to complete\n", d.Id())
 	waitToCommissionConf := &resource.StateChangeConf{
-		Pending:    []string{gomaasapi.NodeStatusCommissioning},
+		Pending:    []string{gomaasapi.NodeStatusCommissioning /*gomaasapi.NodeStatusTesting*/, "21"},
 		Target:     []string{gomaasapi.NodeStatusReady},
 		Refresh:    getNodeStatus(meta.(*Config).MAASObject, d.Id()),
 		Timeout:    25 * time.Minute,
@@ -152,18 +152,11 @@ func resourceMAASMachineUpdate(d *schema.ResourceData, meta interface{}) error {
 // resourceMAASDeploymentDelete will release the commisioning
 func resourceMAASMachineDelete(d *schema.ResourceData, meta interface{}) error {
 	log.Printf("[DEBUG] Deleting node %s\n", d.Id())
-	// remove tags
-	if tags, ok := d.GetOk("tags"); ok {
-		for i := range tags.([]interface{}) {
-			err := nodeTagsRemove(meta.(*Config).MAASObject, d.Id(), tags.([]interface{})[i].(string))
-			if err != nil {
-				log.Printf("[ERROR] Unable to update node (%s) with tag (%s)", d.Id(), tags.([]interface{})[i].(string))
-			}
-		}
+	err := nodeDelete(meta.(*Config).MAASObject, d.Id())
+	if err != nil {
+		log.Printf("[ERROR] Unable to delete node (%s): %v", d.Id(), err)
 	}
-
-	log.Printf("[DEBUG] [resourceMAASDeploymentDelete] Node (%s) decomissioned", d.Id())
-
+	log.Printf("[DEBUG] [resourceMAASMachineDelete] Node (%s) deleted", d.Id())
 	d.SetId("")
 	return nil
 }
