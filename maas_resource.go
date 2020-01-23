@@ -310,14 +310,14 @@ func resourceMAASDeployment() *schema.Resource {
 	}
 }
 
-// resourceMAASNode creates a new terraform schema resource
-func resourceMAASNode() *schema.Resource {
-	log.Println("[DEBUG] [resourceMAASNode] Initializing data structure")
+// resourceMAASMachine creates a new terraform schema resource
+func resourceMAASMachine() *schema.Resource {
+	log.Println("[DEBUG] [resourceMAASMachine] Initializing data structure")
 	return &schema.Resource{
-		Create: resourceMAASNodeCreate,
-		Read:   resourceMAASNodeRead,
-		Update: resourceMAASNodeUpdate,
-		Delete: resourceMAASNodeDelete,
+		Create: resourceMAASMachineCreate,
+		Read:   resourceMAASMachineRead,
+		Update: resourceMAASMachineUpdate,
+		Delete: resourceMAASMachineDelete,
 
 		SchemaVersion: 1,
 
@@ -342,6 +342,25 @@ func resourceMAASNode() *schema.Resource {
 				Optional: true,
 				ForceNew: false,
 				Elem:     &schema.Schema{Type: schema.TypeString},
+			},
+
+			"interface": {
+				Type:     schema.TypeList,
+				Optional: true,
+				ForceNew: true,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"subnet": {
+							Type:     schema.TypeString,
+							Required: true,
+						},
+						"mode": {
+							Type:     schema.TypeString,
+							Required: true,
+							Default:  "dhcp",
+						},
+					},
+				},
 			},
 
 			/*

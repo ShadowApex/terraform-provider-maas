@@ -32,7 +32,7 @@ func Provider() terraform.ResourceProvider {
 
 		ResourcesMap: map[string]*schema.Resource{
 			"maas_deployment": resourceMAASDeployment(),
-			"maas_node":       resourceMAASNode(),
+			"maas_node":       resourceMAASMachine(),
 		},
 
 		ConfigureFunc: providerConfigure,

@@ -29,14 +29,14 @@ provider "maas" {
 
 This provider is able to commission and image nodes. Although a `machine` is a single resource in MaaS these two operations are broken into two resource types in Terraform. This is primarily to reduce the cycle time for re-imaging where a re-commision is not neccessary. 
 
-#### `maas_node`
+#### `maas_machine`
 
-The `maas_node` type manages transitioning a node currently in the "New" state to the "Ready" state so it can be imaged using a `maas_deployment` resource. This resource will wait up to 1 minute for a node to appear in MaaS to allow for newly created nodes (for example, libvirt VMs that PXE boot) to be registered after an initial boot.
+The `maas_machine` type manages transitioning a node currently in the "New" state to the "Ready" state so it can be imaged using a `maas_deployment` resource. This resource will wait up to 1 minute for a node to appear in MaaS to allow for newly created nodes (for example, libvirt VMs that PXE boot) to be registered after an initial boot.
 
 ##### Commision a specific machine in MaaS
 
 ```
-resource "maas_node" "vm" {
+resource "maas_machine" "vm" {
   mac_address = "00:11:22:33:44:55"
   hostname    = "my-vm"
   domain      = "domain.com"
@@ -55,7 +55,7 @@ resource "libvirt_domain" "vm1" {
   ...
 }
 
-resource "maas_node" "myvm" {
+resource "maas_machine" "myvm" {
   mac_address = libvirt_domain.vm1.network_interface.mac
   hostname    = libvirt_domain.vm1.name
   domain      = "domain.com"
@@ -98,14 +98,14 @@ node has been commissioned before being imaged. This can be accomplished with
 a hostname value reference.
 
 ```
-resource "maas_node" "maas_node_1" {
+resource "maas_machine" "maas_machine_1" {
 	hostname = "node-1"
 }
 ```
 
 ```
-resource "maas_deployment" "maas_node_1" {
-	hostname =  maas_node.maas_node_1.hostname
+resource "maas_deployment" "maas_machine_1" {
+	hostname =  maas_machine.maas_machine_1.hostname
 }
 ```
 
