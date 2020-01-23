@@ -38,8 +38,8 @@ func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
 			}
 			return nodeObj, "exists", nil
 		},
-		Timeout:    1 * time.Minute,
-		Delay:      10 * time.Second,
+		Timeout:    5 * time.Minute,
+		Delay:      20 * time.Second,
 		MinTimeout: 3 * time.Second,
 	}
 	if _, err := waitToExistConf.WaitForState(); err != nil {
@@ -64,9 +64,39 @@ func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
 		params.Add("domain", domain.(string))
 	}
 
+	const powerPrefix = "power.0"
+	if _, ok := d.GetOk(powerPrefix); ok {
+		if ptype, ok := d.GetOk(powerPrefix + ".type"); ok {
+			params.Set("power_type", ptype.(string))
+		}
+
+		if user, ok := d.GetOk(powerPrefix + ".user"); ok {
+			params.Set("power_parameters_power_user", user.(string))
+		}
+
+		if password, ok := d.GetOk(powerPrefix + ".password"); ok {
+			params.Set("power_parameters_power_password", password.(string))
+		}
+
+		if address, ok := d.GetOk(powerPrefix + ".address"); ok {
+			params.Set("power_parameters_power_address", address.(string))
+		}
+
+		if custom, ok := d.GetOk(powerPrefix + ".custom"); ok {
+			values, ok := custom.(map[string]interface{})
+			if !ok {
+				return fmt.Errorf("Invalid type for power management custom values")
+			}
+			for k, v := range values {
+				params.Set("power_parameters_"+k, v.(string))
+			}
+		}
+	}
+
 	err = nodeUpdate(meta.(*Config).MAASObject, d.Id(), params)
 	if err != nil {
 		log.Println("[DEBUG] Unable to update node")
+		return fmt.Errorf("Failed to update node options (%v): %v", params, err)
 	}
 
 	// update node tags
@@ -90,7 +120,7 @@ func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
 		Target:     []string{gomaasapi.NodeStatusReady},
 		Refresh:    getNodeStatus(meta.(*Config).MAASObject, d.Id()),
 		Timeout:    25 * time.Minute,
-		Delay:      10 * time.Second,
+		Delay:      20 * time.Second,
 		MinTimeout: 3 * time.Second,
 	}
 

@@ -199,11 +199,6 @@ func resourceMAASDeployment() *schema.Resource {
 				Optional: true,
 			},
 
-			"power_type": {
-				Type:     schema.TypeString,
-				Optional: true,
-			},
-
 			"pxe_mac": {
 				Type:     schema.TypeSet,
 				Optional: true,
@@ -357,18 +352,41 @@ func resourceMAASMachine() *schema.Resource {
 						"mode": {
 							Type:     schema.TypeString,
 							Required: true,
-							Default:  "dhcp",
 						},
 					},
 				},
 			},
 
-			/*
-			   * interface (op=link_subnet)
-			     * subnet
-			     * mode
-			   * power management
-			*/
+			"power": {
+				Type:     schema.TypeList,
+				Optional: true,
+				ForceNew: true,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"type": {
+							Type:     schema.TypeString,
+							Required: true,
+						},
+						"user": {
+							Type:     schema.TypeString,
+							Optional: true,
+						},
+						"password": {
+							Type:     schema.TypeString,
+							Optional: true,
+						},
+						"address": {
+							Type:     schema.TypeString,
+							Required: true,
+						},
+						"custom": {
+							Type:     schema.TypeMap,
+							Optional: true,
+							Elem:     &schema.Schema{Type: schema.TypeString},
+						},
+					},
+				},
+			},
 		},
 	}
 }
