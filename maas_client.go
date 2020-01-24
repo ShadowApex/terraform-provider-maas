@@ -45,6 +45,18 @@ func maasGetSingleNodeByID(maas *gomaasapi.MAASObject, system_id string) (gomaas
 	return nodeObject, nil
 }
 
+// maasGetNodeInterfaces
+// This is a *low level* function that access a MAAS Server and returns a MAASObject referring to a single MAAS managed node's interfaces
+func maasGetNodeInterfaces(maas *gomaasapi.MAASObject, system_id string) ([]gomaasapi.JSONObject, error) {
+	log.Printf("[DEBUG] [maasGetSingleNodeByID] Getting a node (%s) from MAAS\n", system_id)
+	ifaces, err := maas.GetSubObject("machines").GetSubObject(system_id).GetSubObject("interfaces").CallGet("", url.Values{})
+	if err != nil {
+		log.Printf("[ERROR] [maasGetNodeInterfaces] Unable to get node %s interfaces from MAAS: %v\n", system_id, err)
+		return []gomaasapi.JSONObject{}, err
+	}
+	return ifaces.GetArray()
+}
+
 // maasGetSingleNodeByMAC
 // This is a *low level* function that access a MAAS Server and returns a MAASObject referring to a single MAAS managed node.
 // The function takes a pointer to an already active MAASObject as well as a system_id and returns a MAASObject array and an error code.
@@ -240,6 +252,38 @@ func nodeUpdate(maas *gomaasapi.MAASObject, system_id string, params url.Values)
 		return err
 	}
 	return nil
+}
+
+// nodeDo Take an action against a specific node
+func interfaceDo(maas *gomaasapi.MAASObject, system_id string, iface_id string, action string, params url.Values) error {
+	log.Printf("[DEBUG] [interfaceDo] system_id: %s, iface_id: %s, action: %s, params: %+v", system_id, iface_id, action, params)
+
+	nodeObject, err := maasGetSingleNodeByID(maas, system_id)
+	if err != nil {
+		log.Printf("[ERROR] [interfaceDo] Unable to get node (%s) information.\n", system_id)
+		return err
+	}
+
+	_, err = nodeObject.GetSubObject("interfaces").GetSubObject(iface_id).CallPost("link-subnet", params)
+	if err != nil {
+		log.Printf("[ERROR] [interfaceDo] Unable to perform action (%s) on node (%s) interface (%s).  Failed withh error (%s)\n", action, system_id, iface_id, err)
+		return err
+	}
+	return nil
+}
+
+// nodeGetInterfaces update a node with new information
+func nodeGetInterfaces(maas *gomaasapi.MAASObject, system_id string) ([]gomaasapi.JSONObject, error) {
+	nodeObject, err := maasGetSingleNodeByID(maas, system_id)
+	if err != nil {
+		log.Printf("[ERROR] [nodeUpdate] Unable to get node (%s) information.\n", system_id)
+		return []gomaasapi.JSONObject{}, fmt.Errorf("Failed to get interfaces")
+	}
+	if items, err := nodeObject.GetSubObject("interfaces").CallGet("", url.Values{}); err != nil {
+		return []gomaasapi.JSONObject{}, fmt.Errorf("Failed to get interfaces")
+	} else {
+		return items.GetArray()
+	}
 }
 
 // parseConstrains parse the provided constraints from terraform into a url.Values that is passed to the API

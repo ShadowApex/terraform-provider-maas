@@ -109,6 +109,7 @@ func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
 		}
 	}
 
+	// commission the node
 	if err := nodeDo(meta.(*Config).MAASObject, d.Id(), "commission", url.Values{}); err != nil {
 		log.Printf("[ERROR] [resourceMAASMachineCreate] Unable to power up node: %s\n", d.Id())
 		return err
@@ -126,6 +127,42 @@ func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
 
 	if _, err := waitToCommissionConf.WaitForState(); err != nil {
 		return fmt.Errorf("[ERROR] [resourceMAASMachineCreate] Error waiting for commisioning (%s) to complete: %s", d.Id(), err)
+	}
+
+	//
+	if _, ok := d.GetOk("interface.0"); ok {
+		ifaceMode := d.Get("interface.0.mode").(string)
+		ifaceSubnet := d.Get("interface.0.subnet").(string)
+		if interfaces, err := nodeGetInterfaces(meta.(*Config).MAASObject, d.Id()); err != nil {
+			for _, item := range interfaces {
+				// get the list of network interfaces
+				iface, err := item.GetMAASObject()
+				if err != nil {
+					log.Printf("[ERROR] [resourceMAASMachineCreate] Unable to get interface ID")
+					return fmt.Errorf("Failed to parse interfaces")
+				}
+				ifaceID, err := iface.GetField("id")
+				if err != nil {
+					log.Printf("[ERROR] [resourceMAASMachineCreate] Unable to get interface ID")
+					return fmt.Errorf("Failed to parse interfaces")
+				}
+				ifaceParams := url.Values{
+					"mode":   []string{ifaceMode},
+					"subnet": []string{ifaceSubnet},
+				}
+
+				if err := interfaceDo(meta.(*Config).MAASObject, d.Id(), ifaceID, "link-subnet", ifaceParams); err != nil {
+					log.Printf("[ERROR] [resourceMAASMachineCreate] Unable to setup interface: %s, %v\n", d.Id(), err)
+				}
+			}
+		}
+	}
+
+	// setup the network interface
+	err = nodeUpdate(meta.(*Config).MAASObject, d.Id(), params)
+	if err != nil {
+		log.Println("[DEBUG] Unable to update node")
+		return fmt.Errorf("Failed to update node options (%v): %v", params, err)
 	}
 
 	return resourceMAASMachineUpdate(d, meta)
