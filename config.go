@@ -148,6 +148,7 @@ type Config struct {
 	APIURL     string
 	APIver     string
 	MAASObject *gomaasapi.MAASObject
+	Controller gomaasapi.Controller
 }
 
 // Client authenticate to MAAS and create a session
@@ -160,5 +161,12 @@ func (c *Config) Client() (interface{}, error) {
 		return nil, err
 	}
 	c.MAASObject = gomaasapi.NewMAAS(*authClient)
+
+	controller, err := gomaasapi.NewController(gomaasapi.ControllerArgs{APIKey: c.APIKey, BaseURL: c.APIURL})
+	if err != nil {
+		return nil, err
+	}
+	c.Controller = controller
+
 	return c, nil
 }

@@ -345,6 +345,10 @@ func resourceMAASMachine() *schema.Resource {
 				ForceNew: true,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
+						"name": {
+							Type:     schema.TypeString,
+							Required: true,
+						},
 						"subnet": {
 							Type:     schema.TypeString,
 							Required: true,
@@ -352,6 +356,72 @@ func resourceMAASMachine() *schema.Resource {
 						"mode": {
 							Type:     schema.TypeString,
 							Required: true,
+						},
+						//"vlan": {
+						//	Type:     schema.TypeInt,
+						//	Required: true,
+						//},
+						//"tags": {
+						//	Type:     schema.TypeList,
+						//	Optional: true,
+						//	Elem:     &schema.Schema{Type: schema.TypeString},
+						//},
+						"bond": {
+							Type:     schema.TypeList,
+							Optional: true,
+							ForceNew: true,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"parents": {
+										Type:     schema.TypeList,
+										Required: true,
+										Elem:     &schema.Schema{Type: schema.TypeString},
+									},
+									"mac_address": {
+										Type:     schema.TypeString,
+										Optional: true,
+									},
+									"miimon": {
+										Type:     schema.TypeInt,
+										Optional: true,
+									},
+									"downdelay": {
+										Type:     schema.TypeInt,
+										Optional: true,
+									},
+									"updelay": {
+										Type:     schema.TypeInt,
+										Optional: true,
+									},
+									"lacp_rate": {
+										Type:     schema.TypeString,
+										Optional: true,
+									},
+									"xmit_hash_policy": {
+										Type:     schema.TypeString,
+										Optional: true,
+									},
+									"mode": {
+										Type:     schema.TypeString,
+										Optional: true,
+									},
+								},
+								// -- vlan --
+								// tags
+								// vlan
+								// parent
+								// --bridge --
+								// name
+								// mac_address
+								// tags
+								// vlan
+								// parent
+								// bridge_stp
+								// bridge_fd
+								// -- ipv6 --
+								// accept_ra
+								// autoconf
+							},
 						},
 					},
 				},

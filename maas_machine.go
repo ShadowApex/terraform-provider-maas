@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"net/url"
 	"time"
 
 	"github.com/hashicorp/terraform/helper/resource"
@@ -11,9 +10,129 @@ import (
 	"github.com/juju/gomaasapi"
 )
 
+func makeMachineArgs(d *schema.ResourceData) gomaasapi.UpdateMachineArgs {
+	args := gomaasapi.UpdateMachineArgs{
+		PowerOpts: map[string]string{},
+	}
+
+	if hostname, ok := d.GetOk("hostname"); ok {
+		args.Hostname = hostname.(string)
+	}
+
+	if domain, ok := d.GetOk("domain"); ok {
+		args.Domain = domain.(string)
+	}
+
+	const powerPrefix = "power.0"
+	if _, ok := d.GetOk(powerPrefix); ok {
+		if ptype, ok := d.GetOk(powerPrefix + ".type"); ok {
+			args.PowerType = ptype.(string)
+		}
+
+		if user, ok := d.GetOk(powerPrefix + ".user"); ok {
+			args.PowerUser = user.(string)
+		}
+
+		if password, ok := d.GetOk(powerPrefix + ".password"); ok {
+			args.PowerPassword = password.(string)
+		}
+
+		if address, ok := d.GetOk(powerPrefix + ".address"); ok {
+			args.PowerAddress = address.(string)
+		}
+
+		if custom, ok := d.GetOk(powerPrefix + ".custom"); ok {
+			values := custom.(map[string]interface{})
+			for k, v := range values {
+				args.PowerOpts[k] = v.(string)
+			}
+		}
+	}
+	return args
+}
+
+func updateMachineInterfaces(d *schema.ResourceData, controller gomaasapi.Controller, machine gomaasapi.Machine) error {
+	// enumerate the subnets available
+	cidrToSubnet := map[string]gomaasapi.Subnet{}
+	spaces, err := controller.Spaces()
+	if err != nil {
+		return err
+	}
+	for _, space := range spaces {
+		// Note: this will collapse subnets that overlap in different spaces
+		// TODO: link up spaces better
+		for _, subnet := range space.Subnets() {
+			cidrToSubnet[subnet.CIDR()] = subnet
+		}
+	}
+
+	// Build a mapping of interface name to ID
+	nameToIface := map[string]gomaasapi.Interface{}
+	for _, iface := range machine.InterfaceSet() {
+		nameToIface[iface.Name()] = iface
+	}
+
+	for i := 0; i < d.Get("interface.#").(int); i++ {
+		curParams := d.Get(fmt.Sprintf("interface.%d", i)).(*schema.ResourceData)
+		name := curParams.Get("name").(string)
+		log.Printf("[DEBUG] [resourceMAASMachineCreate] Updating interface %s", name)
+		if bondBlock, ok := curParams.GetOk("bond.0"); ok {
+			bondParams := bondBlock.(*schema.ResourceData)
+			log.Printf("[DEBUG] [resourceMAASMachineCreate] Creating bond %s", name)
+			// create a new bond device
+			args := gomaasapi.CreateMachineBondArgs{
+				UpdateInterfaceArgs: gomaasapi.UpdateInterfaceArgs{
+					BondMode:           bondParams.Get("mode").(string),
+					MACAddress:         bondParams.Get("mac_address").(string),
+					BondMiimon:         bondParams.Get("miimon").(int),
+					BondDownDelay:      bondParams.Get("downdelay").(int),
+					BondUpDelay:        bondParams.Get("updelay").(int),
+					BondLACPRate:       bondParams.Get("lacp_rate").(string),
+					BondXmitHashPolicy: bondParams.Get("xmit_hash_policy").(string),
+				},
+				Parents: []gomaasapi.Interface{},
+			}
+
+			if parents, ok := bondParams.GetOk("parents"); ok {
+				for _, parent := range parents.([]interface{}) {
+					args.Parents = append(args.Parents, parent.(gomaasapi.Interface))
+				}
+			}
+
+			if bondIface, err := machine.CreateBond(args); err != nil {
+				return fmt.Errorf("Failed to create bond: %v", err)
+			} else {
+				nameToIface[name] = bondIface
+			}
+		}
+
+		// link the device to a subnet
+		log.Printf("[DEBUG] [resourceMAASMachineCreate] Linking interface %s to subnet", name)
+		subnetCIDR := curParams.Get("subnet").(string)
+		subnet, ok := cidrToSubnet[subnetCIDR]
+		if !ok {
+			return fmt.Errorf("No subnet CIDR %s exists: %s", subnetCIDR)
+		}
+		args := gomaasapi.LinkSubnetArgs{
+			Mode:   gomaasapi.InterfaceLinkMode(curParams.Get("mode").(string)),
+			Subnet: subnet,
+		}
+		if iface, ok := nameToIface[name]; ok {
+			err := iface.LinkSubnet(args)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 // resourceMAASMachineCreate Manages the commisioning of a new maas node
 func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
 	log.Println("[DEBUG] [resourceMAASMachineCreate] Launching new maas_node")
+
+	controller := meta.(*Config).Controller
 
 	macAddressVal, set := d.GetOk("mac_address")
 	if !set {
@@ -31,12 +150,17 @@ func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
 		Pending: []string{"missing"},
 		Target:  []string{"exists"},
 		Refresh: func() (interface{}, string, error) {
-			nodeObj, err := getSingleNodeByMAC(meta.(*Config).MAASObject, macAddress)
+			log.Printf("[ERROR] [resourceMAASMachineCreate] Polling for machine with mac %s.", macAddress)
+			nodes, err := controller.Machines(gomaasapi.MachinesArgs{MACAddresses: []string{macAddress}})
 			if err != nil {
-				log.Printf("[ERROR] [resourceMAASMachineCreate] Unable to locate node by ID: %v.", err)
+				log.Printf("[ERROR] [resourceMAASMachineCreate] Unable to locate node by mac: %v.", err)
+				return nil, "", err
+			}
+			if len(nodes) == 0 {
+				log.Printf("[DEBUG] [resourceMAASMachineCreate] no nodes with mac: %v.", macAddress)
 				return nil, "missing", nil
 			}
-			return nodeObj, "exists", nil
+			return nodes[0], "exists", nil
 		},
 		Timeout:    5 * time.Minute,
 		Delay:      20 * time.Second,
@@ -46,60 +170,24 @@ func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
 		return fmt.Errorf("[ERROR] [resourceMAASMachineCreate] Error waiting for node with mac %s to exist: %s", macAddress, err)
 	}
 
-	nodeObj, err := getSingleNodeByMAC(meta.(*Config).MAASObject, macAddress)
-	if err != nil {
-		log.Println("[ERROR] [resourceMAASMachineCreate] Unable to locate node by ID.")
-		return fmt.Errorf("No node with MAC address '%s' was found: %v", macAddress, err)
+	nodes, err := controller.Machines(gomaasapi.MachinesArgs{MACAddresses: []string{macAddress}})
+	if err != nil || len(nodes) == 0 {
+		log.Printf("[ERROR] [resourceMAASMachineCreate] Unable to locate node by mac: %v.", err)
+		return err
 	}
+	machine := nodes[0]
 
-	d.SetId(nodeObj.system_id)
+	d.SetId(machine.SystemID())
 
-	// update node
-	params := url.Values{}
-	if hostname, ok := d.GetOk("hostname"); ok {
-		params.Add("hostname", hostname.(string))
-	}
-
-	if domain, ok := d.GetOk("domain"); ok {
-		params.Add("domain", domain.(string))
-	}
-
-	const powerPrefix = "power.0"
-	if _, ok := d.GetOk(powerPrefix); ok {
-		if ptype, ok := d.GetOk(powerPrefix + ".type"); ok {
-			params.Set("power_type", ptype.(string))
-		}
-
-		if user, ok := d.GetOk(powerPrefix + ".user"); ok {
-			params.Set("power_parameters_power_user", user.(string))
-		}
-
-		if password, ok := d.GetOk(powerPrefix + ".password"); ok {
-			params.Set("power_parameters_power_password", password.(string))
-		}
-
-		if address, ok := d.GetOk(powerPrefix + ".address"); ok {
-			params.Set("power_parameters_power_address", address.(string))
-		}
-
-		if custom, ok := d.GetOk(powerPrefix + ".custom"); ok {
-			values, ok := custom.(map[string]interface{})
-			if !ok {
-				return fmt.Errorf("Invalid type for power management custom values")
-			}
-			for k, v := range values {
-				params.Set("power_parameters_"+k, v.(string))
-			}
-		}
-	}
-
-	err = nodeUpdate(meta.(*Config).MAASObject, d.Id(), params)
+	// update base machine options
+	machineArgs := makeMachineArgs(d)
+	err = machine.Update(machineArgs)
 	if err != nil {
 		log.Println("[DEBUG] Unable to update node")
-		return fmt.Errorf("Failed to update node options (%v): %v", params, err)
+		return fmt.Errorf("Failed to update node options: %v", err)
 	}
 
-	// update node tags
+	// add tags
 	if tags, ok := d.GetOk("tags"); ok {
 		for i := range tags.([]interface{}) {
 			err := nodeTagsUpdate(meta.(*Config).MAASObject, d.Id(), tags.([]interface{})[i].(string))
@@ -109,15 +197,22 @@ func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
 		}
 	}
 
-	// commission the node
-	if err := nodeDo(meta.(*Config).MAASObject, d.Id(), "commission", url.Values{}); err != nil {
-		log.Printf("[ERROR] [resourceMAASMachineCreate] Unable to power up node: %s\n", d.Id())
+	commisionArgs := gomaasapi.CommissionArgs{
+		EnableSSH:            false,
+		SkipBMCConfig:        false,
+		SkipNetworking:       false,
+		SkipStorage:          false,
+		CommissioningScripts: []string{},
+		TestingScripts:       []string{},
+	}
+	if err := machine.Commission(commisionArgs); err != nil {
+		log.Printf("[ERROR] [resourceMAASMachineCreate] Unable to commission: %s\n", d.Id())
 		return err
 	}
 
 	log.Printf("[DEBUG] [resourceMAASMachineCreate] Waiting for commisioning (%s) to complete\n", d.Id())
 	waitToCommissionConf := &resource.StateChangeConf{
-		Pending:    []string{gomaasapi.NodeStatusCommissioning /*gomaasapi.NodeStatusTesting*/, "21"},
+		Pending:    []string{gomaasapi.NodeStatusCommissioning, gomaasapi.NodeStatusTesting},
 		Target:     []string{gomaasapi.NodeStatusReady},
 		Refresh:    getNodeStatus(meta.(*Config).MAASObject, d.Id()),
 		Timeout:    25 * time.Minute,
@@ -126,43 +221,12 @@ func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	if _, err := waitToCommissionConf.WaitForState(); err != nil {
-		return fmt.Errorf("[ERROR] [resourceMAASMachineCreate] Error waiting for commisioning (%s) to complete: %s", d.Id(), err)
+		return fmt.Errorf("Failed waiting for commisioning (%s) to complete: %s", d.Id(), err)
 	}
 
-	//
-	if _, ok := d.GetOk("interface.0"); ok {
-		ifaceMode := d.Get("interface.0.mode").(string)
-		ifaceSubnet := d.Get("interface.0.subnet").(string)
-		if interfaces, err := nodeGetInterfaces(meta.(*Config).MAASObject, d.Id()); err != nil {
-			for _, item := range interfaces {
-				// get the list of network interfaces
-				iface, err := item.GetMAASObject()
-				if err != nil {
-					log.Printf("[ERROR] [resourceMAASMachineCreate] Unable to get interface ID")
-					return fmt.Errorf("Failed to parse interfaces")
-				}
-				ifaceID, err := iface.GetField("id")
-				if err != nil {
-					log.Printf("[ERROR] [resourceMAASMachineCreate] Unable to get interface ID")
-					return fmt.Errorf("Failed to parse interfaces")
-				}
-				ifaceParams := url.Values{
-					"mode":   []string{ifaceMode},
-					"subnet": []string{ifaceSubnet},
-				}
-
-				if err := interfaceDo(meta.(*Config).MAASObject, d.Id(), ifaceID, "link-subnet", ifaceParams); err != nil {
-					log.Printf("[ERROR] [resourceMAASMachineCreate] Unable to setup interface: %s, %v\n", d.Id(), err)
-				}
-			}
-		}
-	}
-
-	// setup the network interface
-	err = nodeUpdate(meta.(*Config).MAASObject, d.Id(), params)
+	err = updateMachineInterfaces(d, controller, machine)
 	if err != nil {
-		log.Println("[DEBUG] Unable to update node")
-		return fmt.Errorf("Failed to update node options (%v): %v", params, err)
+		return err
 	}
 
 	return resourceMAASMachineUpdate(d, meta)

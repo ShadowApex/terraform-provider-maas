@@ -45,41 +45,6 @@ func maasGetSingleNodeByID(maas *gomaasapi.MAASObject, system_id string) (gomaas
 	return nodeObject, nil
 }
 
-// maasGetNodeInterfaces
-// This is a *low level* function that access a MAAS Server and returns a MAASObject referring to a single MAAS managed node's interfaces
-func maasGetNodeInterfaces(maas *gomaasapi.MAASObject, system_id string) ([]gomaasapi.JSONObject, error) {
-	log.Printf("[DEBUG] [maasGetSingleNodeByID] Getting a node (%s) from MAAS\n", system_id)
-	ifaces, err := maas.GetSubObject("machines").GetSubObject(system_id).GetSubObject("interfaces").CallGet("", url.Values{})
-	if err != nil {
-		log.Printf("[ERROR] [maasGetNodeInterfaces] Unable to get node %s interfaces from MAAS: %v\n", system_id, err)
-		return []gomaasapi.JSONObject{}, err
-	}
-	return ifaces.GetArray()
-}
-
-// maasGetSingleNodeByMAC
-// This is a *low level* function that access a MAAS Server and returns a MAASObject referring to a single MAAS managed node.
-// The function takes a pointer to an already active MAASObject as well as a system_id and returns a MAASObject array and an error code.
-func maasGetSingleNodeByMAC(maas *gomaasapi.MAASObject, macAddress string) (gomaasapi.MAASObject, error) {
-	log.Printf("[DEBUG] [maasGetSingleNodeByMAC] Getting a node (mac: %s) from MAAS\n", macAddress)
-
-	nodeObjects, err := maas.GetSubObject("machines").CallGet("", url.Values{"mac_address": []string{macAddress}})
-	if err != nil {
-		log.Printf("[ERROR] [maasGetSingleNodeByMAC] Unable to get node (mac: %s) from MAAS\n", macAddress)
-		return gomaasapi.MAASObject{}, err
-	}
-	nodeObjectsArray, err := nodeObjects.GetArray()
-	if err != nil {
-		log.Printf("[ERROR] [maasGetSingleNodeByMAC] Unable to get node (mac: %s) from MAAS: invalid return type\n", macAddress)
-		return gomaasapi.MAASObject{}, err
-	}
-	if len(nodeObjectsArray) < 1 {
-		log.Printf("[ERROR] [maasGetSingleNodeByMAC] Unable to get node (mac: %s) from MAAS: no node found\n", macAddress)
-		return gomaasapi.MAASObject{}, fmt.Errorf("No node with mac address '%s' found", macAddress)
-	}
-	return nodeObjectsArray[0].GetMAASObject()
-}
-
 // maasDeleteNode This is a *low level* function that deletes the provided maas node
 func maasDeleteNode(maas *gomaasapi.MAASObject, system_id string) error {
 	log.Printf("[DEBUG] [maasDeleteNode] Deleting node with id %s", system_id)
@@ -145,19 +110,6 @@ func getSingleNodeByID(maas *gomaasapi.MAASObject, system_id string) (*NodeInfo,
 	nodeObject, err := maasGetSingleNodeByID(maas, system_id)
 	if err != nil {
 		log.Printf("[ERROR] [getSingleNode] Unable to get NodeInfo object for node: %s\n", system_id)
-		return nil, err
-	}
-
-	return toNodeInfo(&nodeObject)
-}
-
-// getSingleNodeByMAC Convenience function to get a NodeInfo object for a single MAAS node.
-// The function takes a fully initialized MAASObject and returns a NodeInfo, error
-func getSingleNodeByMAC(maas *gomaasapi.MAASObject, macAddress string) (*NodeInfo, error) {
-	log.Printf("[DEBUG] [getSingleNode] getting node (mac: %s) information\n", macAddress)
-	nodeObject, err := maasGetSingleNodeByMAC(maas, macAddress)
-	if err != nil {
-		log.Println("[ERROR] [resourceMAASNodeCreate] Unable to locate node by ID.")
 		return nil, err
 	}
 
