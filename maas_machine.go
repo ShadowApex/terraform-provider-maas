@@ -197,15 +197,15 @@ func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
 		}
 	}
 
-	commisionArgs := gomaasapi.CommissionArgs{
-		EnableSSH:            false,
-		SkipBMCConfig:        false,
-		SkipNetworking:       false,
-		SkipStorage:          false,
-		CommissioningScripts: []string{},
-		TestingScripts:       []string{},
+	commissionArgs := gomaasapi.CommissionArgs{
+		EnableSSH:            d.Get("enable_ssh").(bool),
+		SkipBMCConfig:        d.Get("skip_bmc_config").(bool),
+		SkipNetworking:       d.Get("skip_networking").(bool),
+		SkipStorage:          d.Get("skip_storage").(bool),
+		CommissioningScripts: d.Get("commissioning_scripts").([]string),
+		TestingScripts:       d.Get("testing_scripts").([]string),
 	}
-	if err := machine.Commission(commisionArgs); err != nil {
+	if err := machine.Commission(commissionArgs); err != nil {
 		log.Printf("[ERROR] [resourceMAASMachineCreate] Unable to commission: %s\n", d.Id())
 		return err
 	}
