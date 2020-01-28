@@ -190,7 +190,7 @@ func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
 	// add tags
 	if tags, ok := d.GetOk("tags"); ok {
 		for i := range tags.([]interface{}) {
-			err := nodeTagsUpdate(meta.(*Config).MAASObject, d.Id(), tags.([]interface{})[i].(string))
+			err := machineUpdateTags(meta.(*Config).Controller, machine, tags.([]interface{})[i].(string))
 			if err != nil {
 				log.Printf("[ERROR] Unable to update node (%s) with tag (%s)", d.Id(), tags.([]interface{})[i].(string))
 			}
@@ -202,9 +202,17 @@ func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
 		SkipBMCConfig:        d.Get("skip_bmc_config").(bool),
 		SkipNetworking:       d.Get("skip_networking").(bool),
 		SkipStorage:          d.Get("skip_storage").(bool),
-		CommissioningScripts: d.Get("commissioning_scripts").([]string),
-		TestingScripts:       d.Get("testing_scripts").([]string),
+		CommissioningScripts: []string{},
+		TestingScripts:       []string{},
 	}
+
+	if scripts, ok := d.GetOk("commissioning_scripts"); ok {
+		commissionArgs.CommissioningScripts = scripts.([]string)
+	}
+	if scripts, ok := d.GetOk("testing_scripts"); ok {
+		commissionArgs.TestingScripts = scripts.([]string)
+	}
+
 	if err := machine.Commission(commissionArgs); err != nil {
 		log.Printf("[ERROR] [resourceMAASMachineCreate] Unable to commission: %s\n", d.Id())
 		return err
