@@ -317,6 +317,12 @@ func resourceMAASMachine() *schema.Resource {
 		SchemaVersion: 1,
 
 		Schema: map[string]*schema.Schema{
+			"architecture": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Default:  "amd64",
+				ForceNew: true,
+			},
 			"mac_address": {
 				Type:     schema.TypeString,
 				Required: true,
@@ -326,6 +332,11 @@ func resourceMAASMachine() *schema.Resource {
 				Type:     schema.TypeString,
 				Required: true,
 				ForceNew: false,
+			},
+			"description": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Default:  "",
 			},
 			"hostname": {
 				Type:     schema.TypeString,

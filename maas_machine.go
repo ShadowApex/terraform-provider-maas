@@ -10,7 +10,28 @@ import (
 	"github.com/juju/gomaasapi"
 )
 
-func makeMachineArgs(d *schema.ResourceData) gomaasapi.UpdateMachineArgs {
+func makeCreateMachineArgs(d *schema.ResourceData) gomaasapi.CreateMachineArgs {
+	args := gomaasapi.CreateMachineArgs{
+		MACAddresses: []string{},
+	}
+	args.UpdateMachineArgs = makeUpdateMachineArgs(d)
+
+	if architecture, ok := d.GetOk("architecture"); ok {
+		args.Architecture = architecture.(string)
+	}
+
+	if description, ok := d.GetOk("description"); ok {
+		args.Description = description.(string)
+	}
+
+	if macAddress, ok := d.GetOk("mac_address"); ok {
+		args.MACAddresses = []string{macAddress.(string)}
+	}
+
+	return args
+}
+
+func makeUpdateMachineArgs(d *schema.ResourceData) gomaasapi.UpdateMachineArgs {
 	args := gomaasapi.UpdateMachineArgs{
 		PowerOpts: map[string]string{},
 	}
@@ -108,13 +129,14 @@ func updateMachineInterfaces(d *schema.ResourceData, controller gomaasapi.Contro
 
 		// link the device to a subnet
 		subnetCIDR := d.Get(fmt.Sprintf("interface.%d.subnet", i)).(string)
-		log.Printf("[DEBUG] [resourceMAASMachineCreate] Linking interface %s to subnet %s", name, subnetCIDR)
 		subnet, ok := cidrToSubnet[subnetCIDR]
 		if !ok {
 			return fmt.Errorf("No subnet CIDR %s exists", subnetCIDR)
 		}
+		mode := d.Get(fmt.Sprintf("interface.%d.mode", i)).(string)
+		log.Printf("[DEBUG] [resourceMAASMachineCreate] Linking interface %s to subnet %s (mode: %s)", name, subnetCIDR, mode)
 		args := gomaasapi.LinkSubnetArgs{
-			Mode:   gomaasapi.InterfaceLinkMode(d.Get(fmt.Sprintf("interface.%d.mode", i)).(string)),
+			Mode:   gomaasapi.InterfaceLinkMode(mode),
 			Subnet: subnet,
 		}
 		if iface, ok := nameToIface[name]; ok {
@@ -143,44 +165,31 @@ func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
 		return fmt.Errorf("Invalid type for mac_address field")
 	}
 
-	// wait for the node to exist, if it was just created as another terraform resource
-	// it might take a few minutes to PXE boot and show up in MaaS
-	log.Printf("[DEBUG] [resourceMAASMachineCreate] Waiting for node with mac %s to exist\n", macAddress)
-	waitToExistConf := &resource.StateChangeConf{
-		Pending: []string{"missing"},
-		Target:  []string{"exists"},
-		Refresh: func() (interface{}, string, error) {
-			log.Printf("[ERROR] [resourceMAASMachineCreate] Polling for machine with mac %s.", macAddress)
-			nodes, err := controller.Machines(gomaasapi.MachinesArgs{MACAddresses: []string{macAddress}})
-			if err != nil {
-				log.Printf("[ERROR] [resourceMAASMachineCreate] Unable to locate node by mac: %v.", err)
-				return nil, "", err
-			}
-			if len(nodes) == 0 {
-				log.Printf("[DEBUG] [resourceMAASMachineCreate] no nodes with mac: %v.", macAddress)
-				return nil, "missing", nil
-			}
-			return nodes[0], "exists", nil
-		},
-		Timeout:    5 * time.Minute,
-		Delay:      20 * time.Second,
-		MinTimeout: 3 * time.Second,
-	}
-	if _, err := waitToExistConf.WaitForState(); err != nil {
-		return fmt.Errorf("[ERROR] [resourceMAASMachineCreate] Error waiting for node with mac %s to exist: %s", macAddress, err)
+	// Attempt to create a new device (it might already exist)
+
+	createArgs := makeCreateMachineArgs(d)
+	_, err := controller.CreateMachine(createArgs)
+	if err != nil {
+		// is error "already exists?"
+		log.Printf("[ERROR] [resourceMAASMachineCreate] Creating a device with mac: %s failed, it might already exist: %v.", macAddress, err)
 	}
 
-	nodes, err := controller.Machines(gomaasapi.MachinesArgs{MACAddresses: []string{macAddress}})
-	if err != nil || len(nodes) == 0 {
-		log.Printf("[ERROR] [resourceMAASMachineCreate] Unable to locate node by mac: %v.", err)
+	// Locate the machine we either just created or was already auto-created
+	machines, err := controller.Machines(gomaasapi.MachinesArgs{MACAddresses: []string{macAddress}})
+	if err != nil {
+		log.Printf("[ERROR] [resourceMAASMachineCreate] Unable to seach machines by mac: %v.", err)
 		return err
 	}
-	machine := nodes[0]
+	if len(machines) == 0 {
+		log.Printf("[DEBUG] [resourceMAASMachineCreate] no nodes with mac: %v.", macAddress)
+		return fmt.Errorf("Failed to create or locate machine with mac %s", macAddress)
+	}
+	machine := machines[0]
 
 	d.SetId(machine.SystemID())
 
 	// update base machine options
-	machineArgs := makeMachineArgs(d)
+	machineArgs := makeUpdateMachineArgs(d)
 	err = machine.Update(machineArgs)
 	if err != nil {
 		log.Println("[DEBUG] Unable to update node")
@@ -228,11 +237,12 @@ func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
 		MinTimeout: 3 * time.Second,
 	}
 
-	if _, err := waitToCommissionConf.WaitForState(); err != nil {
+	commissionedMachine, err := waitToCommissionConf.WaitForState()
+	if err != nil {
 		return fmt.Errorf("Failed waiting for commisioning (%s) to complete: %s", d.Id(), err)
 	}
 
-	err = updateMachineInterfaces(d, controller, machine)
+	err = updateMachineInterfaces(d, controller, commissionedMachine.(gomaasapi.Machine))
 	if err != nil {
 		return err
 	}
@@ -248,7 +258,7 @@ func resourceMAASMachineRead(d *schema.ResourceData, meta interface{}) error {
 
 // resourceMAASMachineUpdate update a node in terraform state
 func resourceMAASMachineUpdate(d *schema.ResourceData, meta interface{}) error {
-	log.Printf("[DEBUG] [resourceMAASMachineUpdate] Modifying deployment %s\n", d.Id())
+	log.Printf("[DEBUG] [resourceMAASMachineUpdate] Modifying machine %s\n", d.Id())
 
 	d.Partial(true)
 
