@@ -62,6 +62,7 @@ func updateMachineInterfaces(d *schema.ResourceData, controller gomaasapi.Contro
 		// Note: this will collapse subnets that overlap in different spaces
 		// TODO: link up spaces better
 		for _, subnet := range space.Subnets() {
+			log.Printf("[DEBUG] Found CIDR %s in Space %s", space.Name(), subnet.CIDR())
 			cidrToSubnet[subnet.CIDR()] = subnet
 		}
 	}
@@ -73,10 +74,9 @@ func updateMachineInterfaces(d *schema.ResourceData, controller gomaasapi.Contro
 	}
 
 	for i := 0; i < d.Get("interface.#").(int); i++ {
-		curParams := d.Get(fmt.Sprintf("interface.%d", i)).(*schema.ResourceData)
-		name := curParams.Get("name").(string)
+		name := d.Get(fmt.Sprintf("interface.%d.name", i)).(string)
 		log.Printf("[DEBUG] [resourceMAASMachineCreate] Updating interface %s", name)
-		if bondBlock, ok := curParams.GetOk("bond.0"); ok {
+		if bondBlock, ok := d.GetOk(fmt.Sprintf("interface.%d.name.bond.0", i)); ok {
 			bondParams := bondBlock.(*schema.ResourceData)
 			log.Printf("[DEBUG] [resourceMAASMachineCreate] Creating bond %s", name)
 			// create a new bond device
@@ -99,22 +99,22 @@ func updateMachineInterfaces(d *schema.ResourceData, controller gomaasapi.Contro
 				}
 			}
 
-			if bondIface, err := machine.CreateBond(args); err != nil {
+			bondIface, err := machine.CreateBond(args)
+			if err != nil {
 				return fmt.Errorf("Failed to create bond: %v", err)
-			} else {
-				nameToIface[name] = bondIface
 			}
+			nameToIface[name] = bondIface
 		}
 
 		// link the device to a subnet
-		log.Printf("[DEBUG] [resourceMAASMachineCreate] Linking interface %s to subnet", name)
-		subnetCIDR := curParams.Get("subnet").(string)
+		subnetCIDR := d.Get(fmt.Sprintf("interface.%d.subnet", i)).(string)
+		log.Printf("[DEBUG] [resourceMAASMachineCreate] Linking interface %s to subnet %s", name, subnetCIDR)
 		subnet, ok := cidrToSubnet[subnetCIDR]
 		if !ok {
-			return fmt.Errorf("No subnet CIDR %s exists: %s", subnetCIDR)
+			return fmt.Errorf("No subnet CIDR %s exists", subnetCIDR)
 		}
 		args := gomaasapi.LinkSubnetArgs{
-			Mode:   gomaasapi.InterfaceLinkMode(curParams.Get("mode").(string)),
+			Mode:   gomaasapi.InterfaceLinkMode(d.Get(fmt.Sprintf("interface.%d.mode", i)).(string)),
 			Subnet: subnet,
 		}
 		if iface, ok := nameToIface[name]; ok {
