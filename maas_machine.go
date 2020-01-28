@@ -271,10 +271,15 @@ func resourceMAASMachineUpdate(d *schema.ResourceData, meta interface{}) error {
 // resourceMAASDeploymentDelete will release the commisioning
 func resourceMAASMachineDelete(d *schema.ResourceData, meta interface{}) error {
 	log.Printf("[DEBUG] Deleting node %s\n", d.Id())
-	err := nodeDelete(meta.(*Config).MAASObject, d.Id())
+	controller := meta.(*Config).Controller
+	machines, err := controller.Machines(gomaasapi.MachinesArgs{SystemIDs: []string{d.Id()}})
 	if err != nil {
 		log.Printf("[ERROR] Unable to delete node (%s): %v", d.Id(), err)
 	}
+	if len(machines) == 0 {
+		return fmt.Errorf("Machine with id %s does not exist", d.Id())
+	}
+	err = machines[0].Delete()
 	log.Printf("[DEBUG] [resourceMAASMachineDelete] Node (%s) deleted", d.Id())
 	d.SetId("")
 	return nil
