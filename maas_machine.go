@@ -212,9 +212,9 @@ func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
 
 	log.Printf("[DEBUG] [resourceMAASMachineCreate] Waiting for commisioning (%s) to complete\n", d.Id())
 	waitToCommissionConf := &resource.StateChangeConf{
-		Pending:    []string{gomaasapi.NodeStatusCommissioning, gomaasapi.NodeStatusTesting},
-		Target:     []string{gomaasapi.NodeStatusReady},
-		Refresh:    getNodeStatus(meta.(*Config).MAASObject, d.Id()),
+		Pending:    []string{"Commissioning", "Testing"},
+		Target:     []string{"Ready"},
+		Refresh:    getMachineStatus(meta.(*Config).Controller, machine.SystemID()),
 		Timeout:    25 * time.Minute,
 		Delay:      20 * time.Second,
 		MinTimeout: 3 * time.Second,

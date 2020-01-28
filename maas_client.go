@@ -1,11 +1,8 @@
 package main
 
 import (
-	"bytes"
-	"fmt"
 	"log"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/hashicorp/terraform/helper/resource"
@@ -80,26 +77,15 @@ func maasReleaseNode(maas *gomaasapi.MAASObject, system_id string, params url.Va
 	return nil
 }
 
-// getNodeStatus Convenience function used by resourceMAASInstanceCreate as a refresh function
-// to determine the current status of a particular MAAS managed node.
-// The function takes a fully intitialized MAASObject and a system_id.
-// It returns StateRefreshFunc resource ( which itself returns a copy of the
-// node in question, a status string and an error if needed or nil )
-func getNodeStatus(maas *gomaasapi.MAASObject, system_id string) resource.StateRefreshFunc {
-	log.Printf("[DEBUG] [getNodeStatus] Getting stat of node: %s", system_id)
+func getMachineStatus(controller gomaasapi.Controller, systemID string) resource.StateRefreshFunc {
+	log.Printf("[DEBUG] [getNodeStatus] Getting stat of node: %s", systemID)
 	return func() (interface{}, string, error) {
-		nodeObject, err := getSingleNodeByID(maas, system_id)
-		if err != nil {
-			log.Printf("[ERROR] [getNodeStatus] Unable to get node: %s\n", system_id)
+		machines, err := controller.Machines(gomaasapi.MachinesArgs{SystemIDs: []string{systemID}})
+		if err != nil || len(machines) == 0 {
+			log.Printf("[ERROR] [getNodeStatus] Unable to get node: %s\n", systemID)
 			return nil, "", err
 		}
-
-		nodeStatus := strconv.FormatUint(uint64(nodeObject.status), 10)
-
-		var statusRetVal bytes.Buffer
-		statusRetVal.WriteString(nodeStatus)
-
-		return nodeObject, statusRetVal.String(), nil
+		return machines[0], machines[0].StatusName(), nil
 	}
 }
 
@@ -204,38 +190,6 @@ func nodeUpdate(maas *gomaasapi.MAASObject, system_id string, params url.Values)
 		return err
 	}
 	return nil
-}
-
-// nodeDo Take an action against a specific node
-func interfaceDo(maas *gomaasapi.MAASObject, system_id string, iface_id string, action string, params url.Values) error {
-	log.Printf("[DEBUG] [interfaceDo] system_id: %s, iface_id: %s, action: %s, params: %+v", system_id, iface_id, action, params)
-
-	nodeObject, err := maasGetSingleNodeByID(maas, system_id)
-	if err != nil {
-		log.Printf("[ERROR] [interfaceDo] Unable to get node (%s) information.\n", system_id)
-		return err
-	}
-
-	_, err = nodeObject.GetSubObject("interfaces").GetSubObject(iface_id).CallPost("link-subnet", params)
-	if err != nil {
-		log.Printf("[ERROR] [interfaceDo] Unable to perform action (%s) on node (%s) interface (%s).  Failed withh error (%s)\n", action, system_id, iface_id, err)
-		return err
-	}
-	return nil
-}
-
-// nodeGetInterfaces update a node with new information
-func nodeGetInterfaces(maas *gomaasapi.MAASObject, system_id string) ([]gomaasapi.JSONObject, error) {
-	nodeObject, err := maasGetSingleNodeByID(maas, system_id)
-	if err != nil {
-		log.Printf("[ERROR] [nodeUpdate] Unable to get node (%s) information.\n", system_id)
-		return []gomaasapi.JSONObject{}, fmt.Errorf("Failed to get interfaces")
-	}
-	if items, err := nodeObject.GetSubObject("interfaces").CallGet("", url.Values{}); err != nil {
-		return []gomaasapi.JSONObject{}, fmt.Errorf("Failed to get interfaces")
-	} else {
-		return items.GetArray()
-	}
 }
 
 // parseConstrains parse the provided constraints from terraform into a url.Values that is passed to the API
