@@ -128,20 +128,29 @@ func updateMachineInterfaces(d *schema.ResourceData, controller gomaasapi.Contro
 			nameToIface[name] = bondIface
 		}
 
-		// link the device to a subnet
-		subnetCIDR := d.Get(fmt.Sprintf("interface.%d.subnet", i)).(string)
-		subnet, ok := cidrToSubnet[subnetCIDR]
-		if !ok {
-			return fmt.Errorf("No subnet CIDR %s exists", subnetCIDR)
-		}
-		mode := d.Get(fmt.Sprintf("interface.%d.mode", i)).(string)
-		log.Printf("[DEBUG] [resourceMAASMachineCreate] Linking interface %s to subnet %s (mode: %s)", name, subnetCIDR, mode)
-		args := gomaasapi.LinkSubnetArgs{
-			Mode:   gomaasapi.InterfaceLinkMode(mode),
-			Subnet: subnet,
-		}
 		if iface, ok := nameToIface[name]; ok {
-			err := iface.LinkSubnet(args)
+			// link the device to a subnet
+			subnetCIDR := d.Get(fmt.Sprintf("interface.%d.subnet", i)).(string)
+			subnet, ok := cidrToSubnet[subnetCIDR]
+			if !ok {
+				return fmt.Errorf("No subnet CIDR %s exists", subnetCIDR)
+			}
+
+			// unlink first
+			err := iface.UnlinkSubnet(subnet)
+			if err != nil {
+				return err
+			}
+
+			// now link the correct subnet
+			mode := d.Get(fmt.Sprintf("interface.%d.mode", i)).(string)
+			log.Printf("[DEBUG] [resourceMAASMachineCreate] Linking interface %s to subnet %s (mode: %s)", name, subnetCIDR, mode)
+			args := gomaasapi.LinkSubnetArgs{
+				Mode:   gomaasapi.InterfaceLinkMode(mode),
+				Subnet: subnet,
+			}
+
+			err = iface.LinkSubnet(args)
 			if err != nil {
 				return err
 			}
