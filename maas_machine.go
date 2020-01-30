@@ -12,6 +12,7 @@ import (
 
 func makeCreateMachineArgs(d *schema.ResourceData) gomaasapi.CreateMachineArgs {
 	args := gomaasapi.CreateMachineArgs{
+		Commission:   false, // we manage the commision state
 		MACAddresses: []string{},
 	}
 	args.UpdateMachineArgs = makeUpdateMachineArgs(d)
@@ -224,7 +225,13 @@ func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
 
 	if err := machine.Commission(commissionArgs); err != nil {
 		log.Printf("[ERROR] [resourceMAASMachineCreate] Unable to commission: %s\n", d.Id())
-		return err
+		_, stateName, _ := getMachineStatus(controller, machine.SystemID())()
+		if stateName != "Commissioning" {
+			// we were in a real unexpected state - bail
+			log.Printf("[ERROR] [resourceMAASMachineCreate] commision request machine state: '%s'\n", stateName)
+			return err
+		}
+		// ignore this error, we may have auto-entered commissioning state, not great but ok :|
 	}
 
 	log.Printf("[DEBUG] [resourceMAASMachineCreate] Waiting for commisioning (%s) to complete\n", d.Id())
