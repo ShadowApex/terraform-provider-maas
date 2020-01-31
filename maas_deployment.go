@@ -116,9 +116,9 @@ func resourceMAASDeploymentCreate(d *schema.ResourceData, meta interface{}) erro
 		Pending:    []string{"Deploying"},
 		Target:     []string{"Deployed"},
 		Refresh:    getMachineStatus(meta.(*Config).Controller, d.Id()),
-		Timeout:    25 * time.Minute,
-		Delay:      10 * time.Second,
-		MinTimeout: 3 * time.Second,
+		Timeout:    30 * time.Minute,
+		Delay:      120 * time.Second,
+		MinTimeout: 45 * time.Second,
 	}
 
 	if _, err := stateConf.WaitForState(); err != nil {

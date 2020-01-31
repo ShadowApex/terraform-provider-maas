@@ -249,8 +249,8 @@ func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
 		Target:     []string{"Ready"},
 		Refresh:    getMachineStatus(meta.(*Config).Controller, machine.SystemID()),
 		Timeout:    25 * time.Minute,
-		Delay:      20 * time.Second,
-		MinTimeout: 3 * time.Second,
+		Delay:      60 * time.Second,
+		MinTimeout: 30 * time.Second,
 	}
 
 	commissionedMachine, err := waitToCommissionConf.WaitForState()
