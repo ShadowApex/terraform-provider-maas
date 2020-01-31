@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hashicorp/hil"
+	"github.com/hashicorp/terraform/configs/hcl2shim"
 )
 
 // Expand takes a map and a key (prefix) and expands that value into
@@ -28,7 +28,7 @@ func Expand(m map[string]string, key string) interface{} {
 		// If the count of the key is unknown, then just put the unknown
 		// value in the value itself. This will be detected by Terraform
 		// core later.
-		if v == hil.UnknownValue {
+		if v == hcl2shim.UnknownVariableValue {
 			return v
 		}
 
@@ -59,6 +59,11 @@ func expandArray(m map[string]string, prefix string) []interface{} {
 	if num == 0 {
 		return []interface{}{}
 	}
+
+	// NOTE: "num" is not necessarily accurate, e.g. if a user tampers
+	// with state, so the following code should not crash when given a
+	// number of items more or less than what's given in num. The
+	// num key is mainly just a hint that this is a list or set.
 
 	// The Schema "Set" type stores its values in an array format, but
 	// using numeric hash values instead of ordinal keys. Take the set
@@ -101,7 +106,7 @@ func expandArray(m map[string]string, prefix string) []interface{} {
 	}
 	sort.Ints(keysList)
 
-	result := make([]interface{}, num)
+	result := make([]interface{}, len(keysList))
 	for i, key := range keysList {
 		keyString := strconv.Itoa(key)
 		if computed[keyString] {

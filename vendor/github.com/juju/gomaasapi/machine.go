@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/juju/errors"
 	"github.com/juju/schema"
@@ -40,6 +41,7 @@ type machine struct {
 	bootInterface *interface_
 	interfaceSet  []*interface_
 	zone          *zone
+	pool          *pool
 	// Don't really know the difference between these two lists:
 	physicalBlockDevices []*blockdevice
 	blockDevices         []*blockdevice
@@ -60,6 +62,7 @@ func (m *machine) updateFrom(other *machine) {
 	m.statusName = other.statusName
 	m.statusMessage = other.statusMessage
 	m.zone = other.zone
+	m.pool = other.pool
 	m.tags = other.tags
 	m.ownerData = other.ownerData
 }
@@ -82,6 +85,14 @@ func (m *machine) FQDN() string {
 // Tags implements Machine.
 func (m *machine) Tags() []string {
 	return m.tags
+}
+
+// Pool implements Machine
+func (m *machine) Pool() Pool {
+	if m.pool == nil {
+		return nil
+	}
+	return m.pool
 }
 
 // IPAddresses implements Machine.
@@ -178,12 +189,7 @@ func (m *machine) PhysicalBlockDevices() []BlockDevice {
 
 // PhysicalBlockDevice implements Machine.
 func (m *machine) PhysicalBlockDevice(id int) BlockDevice {
-	for _, blockDevice := range m.physicalBlockDevices {
-		if blockDevice.ID() == id {
-			return blockDevice
-		}
-	}
-	return nil
+	return blockDeviceById(id, m.PhysicalBlockDevices())
 }
 
 // BlockDevices implements Machine.
@@ -193,6 +199,36 @@ func (m *machine) BlockDevices() []BlockDevice {
 		result[i] = v
 	}
 	return result
+}
+
+// BlockDevice implements Machine.
+func (m *machine) BlockDevice(id int) BlockDevice {
+	return blockDeviceById(id, m.BlockDevices())
+}
+
+func blockDeviceById(id int, blockDevices []BlockDevice) BlockDevice {
+	for _, blockDevice := range blockDevices {
+		if blockDevice.ID() == id {
+			return blockDevice
+		}
+	}
+	return nil
+}
+
+// Partition implements Machine.
+func (m *machine) Partition(id int) Partition {
+	return partitionById(id, m.BlockDevices())
+}
+
+func partitionById(id int, blockDevices []BlockDevice) Partition {
+	for _, blockDevice := range blockDevices {
+		for _, partition := range blockDevice.Partitions() {
+			if partition.ID() == id {
+				return partition
+			}
+		}
+	}
+	return nil
 }
 
 // Devices implements Machine.
@@ -210,6 +246,107 @@ func (m *machine) Devices(args DevicesArgs) ([]Device, error) {
 		}
 	}
 	return result, nil
+}
+
+// UpdateMachineArgs is arguments for machine.Update
+type UpdateMachineArgs struct {
+	Hostname      string
+	Domain        string
+	PowerType     string
+	PowerAddress  string
+	PowerUser     string
+	PowerPassword string
+	PowerOpts     map[string]string
+}
+
+// Validate ensures the arguments are acceptable
+func (a *UpdateMachineArgs) Validate() error {
+	return nil
+}
+
+// ToParams converts arguments to URL parameters
+func (a *UpdateMachineArgs) ToParams() *URLParams {
+	params := NewURLParams()
+	params.MaybeAdd("hostname", a.Hostname)
+	params.MaybeAdd("domain", a.Domain)
+	params.MaybeAdd("power_type", a.PowerType)
+	params.MaybeAdd("power_parameters_power_user", a.PowerUser)
+	params.MaybeAdd("power_parameters_power_password", a.PowerUser)
+	params.MaybeAdd("power_parameters_power_address", a.PowerAddress)
+	if a.PowerOpts != nil {
+		for k, v := range a.PowerOpts {
+			params.MaybeAdd(fmt.Sprintf("power_parameters_%s", k), v)
+		}
+	}
+	return params
+}
+
+// Update implementes Machine
+func (m *machine) Update(args UpdateMachineArgs) error {
+	params := args.ToParams()
+	result, err := m.controller.put(m.resourceURI, params.Values)
+	if err != nil {
+		if svrErr, ok := errors.Cause(err).(ServerError); ok {
+			switch svrErr.StatusCode {
+			case http.StatusNotFound, http.StatusConflict:
+				return errors.Wrap(err, NewBadRequestError(svrErr.BodyMessage))
+			case http.StatusForbidden:
+				return errors.Wrap(err, NewPermissionError(svrErr.BodyMessage))
+			case http.StatusServiceUnavailable:
+				return errors.Wrap(err, NewCannotCompleteError(svrErr.BodyMessage))
+			}
+		}
+		return NewUnexpectedError(err)
+	}
+
+	machine, err := readMachine(m.controller.apiVersion, result)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	m.updateFrom(machine)
+	return nil
+}
+
+// CommissionArgs is an argument struct for Machine.Commission
+type CommissionArgs struct {
+	EnableSSH            bool
+	SkipBMCConfig        bool
+	SkipNetworking       bool
+	SkipStorage          bool
+	CommissioningScripts []string
+	TestingScripts       []string
+}
+
+func (m *machine) Commission(args CommissionArgs) error {
+	params := NewURLParams()
+	params.MaybeAddBool("enableSSH", args.EnableSSH)
+	params.MaybeAddBool("skip_bmc_config", args.SkipBMCConfig)
+	params.MaybeAddBool("skip_networking", args.SkipNetworking)
+	params.MaybeAddBool("skip_storage", args.SkipStorage)
+	params.MaybeAdd("commissioning_scripts", strings.Join(args.CommissioningScripts, ","))
+	params.MaybeAdd("testing_scripts", strings.Join(args.TestingScripts, ","))
+
+	result, err := m.controller.post(m.resourceURI, "commission", params.Values)
+	if err != nil {
+		if svrErr, ok := errors.Cause(err).(ServerError); ok {
+			switch svrErr.StatusCode {
+			case http.StatusNotFound, http.StatusConflict:
+				return errors.Wrap(err, NewBadRequestError(svrErr.BodyMessage))
+			case http.StatusForbidden:
+				return errors.Wrap(err, NewPermissionError(svrErr.BodyMessage))
+			case http.StatusServiceUnavailable:
+				return errors.Wrap(err, NewCannotCompleteError(svrErr.BodyMessage))
+			}
+		}
+		return NewUnexpectedError(err)
+	}
+
+	machine, err := readMachine(m.controller.apiVersion, result)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	m.updateFrom(machine)
+	return nil
 }
 
 // StartArgs is an argument struct for passing parameters to the Machine.Start
@@ -250,6 +387,54 @@ func (m *machine) Start(args StartArgs) error {
 	}
 	m.updateFrom(machine)
 	return nil
+}
+
+// CreateMachineBondArgs is the argument structure for Machine.CreateBond
+type CreateMachineBondArgs struct {
+	UpdateInterfaceArgs
+	Parents []Interface
+}
+
+func (a *CreateMachineBondArgs) toParams() *URLParams {
+	params := a.UpdateInterfaceArgs.toParams()
+	parents := []string{}
+	for _, p := range a.Parents {
+		parents = append(parents, fmt.Sprintf("%d", p.ID()))
+	}
+	params.MaybeAdd("parents", strings.Join(parents, ","))
+	return params
+}
+
+// Validate ensures that all required values are non-emtpy.
+func (a *CreateMachineBondArgs) Validate() error {
+	return nil
+}
+
+// CreateBond implements Machine
+func (m *machine) CreateBond(args CreateMachineBondArgs) (_ Interface, err error) {
+	if err := args.Validate(); err != nil {
+		return nil, errors.Trace(err)
+	}
+
+	params := args.toParams()
+	source, err := m.controller.post(m.resourceURI+"interfaces/", "create_bond", params.Values)
+	if err != nil {
+		if svrErr, ok := errors.Cause(err).(ServerError); ok {
+			switch svrErr.StatusCode {
+			case http.StatusNotFound:
+				return nil, errors.Wrap(err, NewNoMatchError(svrErr.BodyMessage))
+			case http.StatusForbidden:
+				return nil, errors.Wrap(err, NewPermissionError(svrErr.BodyMessage))
+			}
+		}
+		return nil, NewUnexpectedError(err)
+	}
+
+	response, err := readInterface(m.controller.apiVersion, source)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	return response, nil
 }
 
 // CreateMachineDeviceArgs is an argument structure for Machine.CreateDevice.
@@ -396,6 +581,14 @@ func (m *machine) SetOwnerData(ownerData map[string]string) error {
 	return nil
 }
 
+func (m *machine) Delete() error {
+	err := m.controller.delete(m.resourceURI)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	return nil
+}
+
 func readMachine(controllerVersion version.Number, source interface{}) (*machine, error) {
 	readFunc, err := getMachineDeserializationFunc(controllerVersion)
 	if err != nil {
@@ -485,6 +678,7 @@ func machine_2_0(source map[string]interface{}) (*machine, error) {
 		"boot_interface": schema.OneOf(schema.Nil(""), schema.StringMap(schema.Any())),
 		"interface_set":  schema.List(schema.StringMap(schema.Any())),
 		"zone":           schema.StringMap(schema.Any()),
+		"pool":           schema.OneOf(schema.Nil(""), schema.Any()),
 
 		"physicalblockdevice_set": schema.List(schema.StringMap(schema.Any())),
 		"blockdevice_set":         schema.List(schema.StringMap(schema.Any())),
@@ -492,6 +686,7 @@ func machine_2_0(source map[string]interface{}) (*machine, error) {
 	defaults := schema.Defaults{
 		"architecture": "",
 	}
+
 	checker := schema.FieldMap(fields, defaults)
 	coerced, err := checker.Coerce(source, nil)
 	if err != nil {
@@ -513,14 +708,24 @@ func machine_2_0(source map[string]interface{}) (*machine, error) {
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
+
 	zone, err := zone_2_0(valid["zone"].(map[string]interface{}))
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
+
+	var pool *pool
+	if valid["pool"] != nil {
+		if pool, err = pool_2_0(valid["pool"].(map[string]interface{})); err != nil {
+			return nil, errors.Trace(err)
+		}
+	}
+
 	physicalBlockDevices, err := readBlockDeviceList(valid["physicalblockdevice_set"].([]interface{}), blockdevice_2_0)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
+
 	blockDevices, err := readBlockDeviceList(valid["blockdevice_set"].([]interface{}), blockdevice_2_0)
 	if err != nil {
 		return nil, errors.Trace(err)
@@ -550,6 +755,7 @@ func machine_2_0(source map[string]interface{}) (*machine, error) {
 		bootInterface:        bootInterface,
 		interfaceSet:         interfaceSet,
 		zone:                 zone,
+		pool:                 pool,
 		physicalBlockDevices: physicalBlockDevices,
 		blockDevices:         blockDevices,
 	}

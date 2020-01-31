@@ -11,13 +11,14 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"sync/atomic"
 
+	"github.com/juju/collections/set"
 	"github.com/juju/errors"
 	"github.com/juju/loggo"
 	"github.com/juju/schema"
-	"github.com/juju/utils/set"
 	"github.com/juju/version"
 )
 
@@ -221,6 +222,43 @@ func (c *controller) Zones() ([]Zone, error) {
 	return result, nil
 }
 
+// Pools implements Controller.
+func (c *controller) Pools() ([]Pool, error) {
+	var result []Pool
+
+	source, err := c.get("pools")
+	if err != nil {
+		return nil, NewUnexpectedError(err)
+	}
+
+	pools, err := readPools(c.apiVersion, source)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+
+	for _, p := range pools {
+		result = append(result, p)
+	}
+	return result, nil
+}
+
+// Domains implements Controller
+func (c *controller) Domains() ([]Domain, error) {
+	source, err := c.get("domains")
+	if err != nil {
+		return nil, NewUnexpectedError(err)
+	}
+	domains, err := readDomains(c.apiVersion, source)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	var result []Domain
+	for _, domain := range domains {
+		result = append(result, domain)
+	}
+	return result, nil
+}
+
 // DevicesArgs is a argument struct for selecting Devices.
 // Only devices that match the specified criteria are returned.
 type DevicesArgs struct {
@@ -229,6 +267,7 @@ type DevicesArgs struct {
 	SystemIDs    []string
 	Domain       string
 	Zone         string
+	Pool         string
 	AgentName    string
 }
 
@@ -240,6 +279,7 @@ func (c *controller) Devices(args DevicesArgs) ([]Device, error) {
 	params.MaybeAddMany("id", args.SystemIDs)
 	params.MaybeAdd("domain", args.Domain)
 	params.MaybeAdd("zone", args.Zone)
+	params.MaybeAdd("pool", args.Pool)
 	params.MaybeAdd("agent_name", args.AgentName)
 	source, err := c.getQuery("devices", params.Values)
 	if err != nil {
@@ -295,6 +335,67 @@ func (c *controller) CreateDevice(args CreateDeviceArgs) (Device, error) {
 	return device, nil
 }
 
+// CreateMachineArgs is a argument struct for passing information into CreateDevice.
+type CreateMachineArgs struct {
+	UpdateMachineArgs
+	Architecture string
+	Description  string
+	Commission   bool
+	MACAddresses []string
+}
+
+// Validate ensures the arguments are acceptable
+func (a *CreateMachineArgs) Validate() error {
+	if err := a.UpdateMachineArgs.Validate(); err != nil {
+		return err
+	}
+	if len(a.MACAddresses) == 0 {
+		return fmt.Errorf("at least one MAC address must be specified")
+	}
+
+	return nil
+}
+
+// ToParams converts arguments to URL parameters
+func (a *CreateMachineArgs) ToParams() *URLParams {
+	params := a.UpdateMachineArgs.ToParams()
+	params.MaybeAdd("architecture", a.Architecture)
+	params.MaybeAdd("description", a.Description)
+	params.MaybeAddMany("mac_addresses", a.MACAddresses)
+	if a.Commission {
+		params.MaybeAdd("commission", "true")
+	} else {
+		params.MaybeAdd("commission", "false")
+	}
+	return params
+}
+
+// CreateMachine implements Controller.
+func (c *controller) CreateMachine(args CreateMachineArgs) (Machine, error) {
+	// There must be at least one mac address.
+	if err := args.Validate(); err != nil {
+		return nil, errors.NewBadRequest(err, "Invalid CreateMachine arguments")
+	}
+	params := args.ToParams()
+	result, err := c.post("machines", "", params.Values)
+	if err != nil {
+		if svrErr, ok := errors.Cause(err).(ServerError); ok {
+			if svrErr.StatusCode == http.StatusBadRequest {
+				return nil, errors.Wrap(err, NewBadRequestError(svrErr.BodyMessage))
+			}
+		}
+		// Translate http errors.
+		return nil, NewUnexpectedError(err)
+	}
+
+	machine, err := readMachine(c.apiVersion, result)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	machine.controller = c
+	return machine, nil
+}
+
 // MachinesArgs is a argument struct for selecting Machines.
 // Only machines that match the specified criteria are returned.
 type MachinesArgs struct {
@@ -303,6 +404,7 @@ type MachinesArgs struct {
 	SystemIDs    []string
 	Domain       string
 	Zone         string
+	Pool         string
 	AgentName    string
 	OwnerData    map[string]string
 }
@@ -315,6 +417,7 @@ func (c *controller) Machines(args MachinesArgs) ([]Machine, error) {
 	params.MaybeAddMany("id", args.SystemIDs)
 	params.MaybeAdd("domain", args.Domain)
 	params.MaybeAdd("zone", args.Zone)
+	params.MaybeAdd("pool", args.Pool)
 	params.MaybeAdd("agent_name", args.AgentName)
 	// At the moment the MAAS API doesn't support filtering by owner
 	// data so we do that ourselves below.
@@ -336,6 +439,19 @@ func (c *controller) Machines(args MachinesArgs) ([]Machine, error) {
 	return result, nil
 }
 
+func (c *controller) GetMachine(systemID string) (Machine, error) {
+	source, err := c.getQuery("machines/"+systemID, url.Values{})
+	if err != nil {
+		return nil, NewUnexpectedError(err)
+	}
+	m, err := readMachine(c.apiVersion, source)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	m.controller = c
+	return m, nil
+}
+
 func ownerDataMatches(ownerData, filter map[string]string) bool {
 	for key, value := range filter {
 		if ownerData[key] != value {
@@ -353,7 +469,7 @@ type StorageSpec struct {
 	Label string
 	// Size is required and refers to the required minimum size in GB.
 	Size int
-	// Zero or more tags assocated to with the disks.
+	// Zero or more tags associated to the disks.
 	Tags []string
 }
 
@@ -384,7 +500,7 @@ func (s *StorageSpec) String() string {
 	return fmt.Sprintf("%s%d%s", label, s.Size, tags)
 }
 
-// InterfaceSpec represents one elemenet of network related constraints.
+// InterfaceSpec represents one element of network related constraints.
 type InterfaceSpec struct {
 	// Label is required and an arbitrary string. Labels need to be unique
 	// across the InterfaceSpec elements specified in the AllocateMachineArgs.
@@ -425,6 +541,7 @@ func (a *InterfaceSpec) String() string {
 // AllocateMachineArgs is an argument struct for passing args into Machine.Allocate.
 type AllocateMachineArgs struct {
 	Hostname     string
+	SystemId     string
 	Architecture string
 	MinCPUCount  int
 	// MinMemory represented in MB.
@@ -432,7 +549,9 @@ type AllocateMachineArgs struct {
 	Tags      []string
 	NotTags   []string
 	Zone      string
+	Pool      string
 	NotInZone []string
+	NotInPool []string
 	// Storage represents the required disks on the Machine. If any are specified
 	// the first value is used for the root disk.
 	Storage []StorageSpec
@@ -447,8 +566,9 @@ type AllocateMachineArgs struct {
 	DryRun    bool
 }
 
-// Validate makes sure that any labels specifed in Storage or Interfaces
-// are unique, and that the required specifications are valid.
+// Validate makes sure that any labels specified in Storage or Interfaces
+// are unique, and that the required specifications are valid. It
+// also makes sure that any pools specified exist.
 func (a *AllocateMachineArgs) Validate() error {
 	storageLabels := set.NewStrings()
 	for _, spec := range a.Storage {
@@ -512,9 +632,9 @@ type ConstraintMatches struct {
 	// that match that constraint.
 	Interfaces map[string][]Interface
 
-	// Storage is a mapping of the constraint label specified to the BlockDevices
+	// Storage is a mapping of the constraint label specified to the StorageDevice
 	// that match that constraint.
-	Storage map[string][]BlockDevice
+	Storage map[string][]StorageDevice
 }
 
 // AllocateMachine implements Controller.
@@ -525,6 +645,7 @@ func (c *controller) AllocateMachine(args AllocateMachineArgs) (Machine, Constra
 	var matches ConstraintMatches
 	params := NewURLParams()
 	params.MaybeAdd("name", args.Hostname)
+	params.MaybeAdd("system_id", args.SystemId)
 	params.MaybeAdd("arch", args.Architecture)
 	params.MaybeAddInt("cpu_count", args.MinCPUCount)
 	params.MaybeAddInt("mem", args.MinMemory)
@@ -534,7 +655,9 @@ func (c *controller) AllocateMachine(args AllocateMachineArgs) (Machine, Constra
 	params.MaybeAdd("interfaces", args.interfaces())
 	params.MaybeAddMany("not_subnets", args.notSubnets())
 	params.MaybeAdd("zone", args.Zone)
+	params.MaybeAdd("pool", args.Pool)
 	params.MaybeAddMany("not_in_zone", args.NotInZone)
+	params.MaybeAddMany("not_in_pool", args.NotInPool)
 	params.MaybeAdd("agent_name", args.AgentName)
 	params.MaybeAdd("comment", args.Comment)
 	params.MaybeAddBool("dry_run", args.DryRun)
@@ -568,8 +691,12 @@ func (c *controller) AllocateMachine(args AllocateMachineArgs) (Machine, Constra
 // ReleaseMachinesArgs is an argument struct for passing the machine system IDs
 // and an optional comment into the ReleaseMachines method.
 type ReleaseMachinesArgs struct {
-	SystemIDs []string
-	Comment   string
+	SystemIDs   []string
+	Comment     string
+	Erase       bool
+	SecureErase bool
+	QuickErase  bool
+	Force       bool
 }
 
 // ReleaseMachines implements Controller.
@@ -582,6 +709,10 @@ func (c *controller) ReleaseMachines(args ReleaseMachinesArgs) error {
 	params := NewURLParams()
 	params.MaybeAddMany("machines", args.SystemIDs)
 	params.MaybeAdd("comment", args.Comment)
+	params.MaybeAddBool("erase", args.Erase)
+	params.MaybeAddBool("secure_erase", args.SecureErase)
+	params.MaybeAddBool("quick_erase", args.QuickErase)
+	params.MaybeAddBool("force", args.Force)
 	_, err := c.post("machines", "release", params.Values)
 	if err != nil {
 		if svrErr, ok := errors.Cause(err).(ServerError); ok {
@@ -703,6 +834,66 @@ func (c *controller) AddFile(args AddFileArgs) error {
 		return NewUnexpectedError(err)
 	}
 	return nil
+}
+
+func (c *controller) Tags() ([]Tag, error) {
+	source, err := c.getQuery("tags", url.Values{})
+	if err != nil {
+		return nil, NewUnexpectedError(err)
+	}
+	tags, err := readTags(c.apiVersion, source)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	var result []Tag
+	for _, t := range tags {
+		t.controller = c
+		result = append(result, t)
+	}
+	return result, nil
+}
+
+func (c *controller) GetTag(name string) (Tag, error) {
+	source, err := c.getQuery("tags/"+name, url.Values{})
+	if err != nil {
+		return nil, NewUnexpectedError(err)
+	}
+	tag, err := readTag(c.apiVersion, source)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	tag.controller = c
+	return tag, nil
+}
+
+// CreateTagArgs are creation parameters
+type CreateTagArgs struct {
+	Name       string
+	Comment    string
+	Definition string
+}
+
+// Validate ensures arguments are valid
+func (a *CreateTagArgs) Validate() error {
+	if a.Name == "" {
+		return fmt.Errorf("Missing name value")
+	}
+	return nil
+}
+
+func (c *controller) CreateTag(args CreateTagArgs) (Tag, error) {
+	if err := args.Validate(); err != nil {
+		return nil, err
+	}
+	params := NewURLParams()
+	params.MaybeAdd("name", args.Name)
+	params.MaybeAdd("comment", args.Comment)
+	params.MaybeAdd("definition", args.Definition)
+	result, err := c.post("tags", "", params.Values)
+	if err != nil {
+		return nil, err
+	}
+	return readTag(c.apiVersion, result)
 }
 
 func (c *controller) checkCreds() error {
@@ -893,7 +1084,7 @@ func (c *controller) readAPIVersionInfo() (set.Strings, error) {
 func parseAllocateConstraintsResponse(source interface{}, machine *machine) (ConstraintMatches, error) {
 	var empty ConstraintMatches
 	matchFields := schema.Fields{
-		"storage":    schema.StringMap(schema.List(schema.ForceInt())),
+		"storage":    schema.StringMap(schema.List(schema.Any())),
 		"interfaces": schema.StringMap(schema.List(schema.ForceInt())),
 	}
 	matchDefaults := schema.Defaults{
@@ -912,11 +1103,11 @@ func parseAllocateConstraintsResponse(source interface{}, machine *machine) (Con
 	constraintsMap := valid["constraints_by_type"].(map[string]interface{})
 	result := ConstraintMatches{
 		Interfaces: make(map[string][]Interface),
-		Storage:    make(map[string][]BlockDevice),
+		Storage:    make(map[string][]StorageDevice),
 	}
 
 	if interfaceMatches, found := constraintsMap["interfaces"]; found {
-		matches := convertConstraintMatches(interfaceMatches)
+		matches := convertConstraintMatchesInt(interfaceMatches)
 		for label, ids := range matches {
 			interfaces := make([]Interface, len(ids))
 			for index, id := range ids {
@@ -931,23 +1122,45 @@ func parseAllocateConstraintsResponse(source interface{}, machine *machine) (Con
 	}
 
 	if storageMatches, found := constraintsMap["storage"]; found {
-		matches := convertConstraintMatches(storageMatches)
+		matches := convertConstraintMatchesAny(storageMatches)
 		for label, ids := range matches {
-			blockDevices := make([]BlockDevice, len(ids))
-			for index, id := range ids {
-				blockDevice := machine.PhysicalBlockDevice(id)
-				if blockDevice == nil {
-					return empty, NewDeserializationError("constraint match storage %q: %d does not match a physical block device for the machine", label, id)
+			storageDevices := make([]StorageDevice, len(ids))
+			for index, storageId := range ids {
+				// The key value can be either an `int` which `json.Unmarshal` converts to a `float64` or a
+				// `string` when the key is "partition:{part_id}".
+				if id, ok := storageId.(float64); ok {
+					// Links to a block device.
+					blockDevice := machine.BlockDevice(int(id))
+					if blockDevice == nil {
+						return empty, NewDeserializationError("constraint match storage %q: %d does not match a block device for the machine", label, int(id))
+					}
+					storageDevices[index] = blockDevice
+				} else if id, ok := storageId.(string); ok {
+					// Should link to a partition.
+					const partPrefix = "partition:"
+					if !strings.HasPrefix(id, partPrefix) {
+						return empty, NewDeserializationError("constraint match storage %q: %s is not prefixed with partition", label, id)
+					}
+					partId, err := strconv.Atoi(id[len(partPrefix):])
+					if err != nil {
+						return empty, NewDeserializationError("constraint match storage %q: %s cannot convert to int.", label, id[len(partPrefix):])
+					}
+					partition := machine.Partition(partId)
+					if partition == nil {
+						return empty, NewDeserializationError("constraint match storage %q: %d does not match a partition for the machine", label, partId)
+					}
+					storageDevices[index] = partition
+				} else {
+					return empty, NewDeserializationError("constraint match storage %q: %v is not an int or string", label, storageId)
 				}
-				blockDevices[index] = blockDevice
 			}
-			result.Storage[label] = blockDevices
+			result.Storage[label] = storageDevices
 		}
 	}
 	return result, nil
 }
 
-func convertConstraintMatches(source interface{}) map[string][]int {
+func convertConstraintMatchesInt(source interface{}) map[string][]int {
 	// These casts are all safe because of the schema check.
 	result := make(map[string][]int)
 	matchMap := source.(map[string]interface{})
@@ -956,6 +1169,20 @@ func convertConstraintMatches(source interface{}) map[string][]int {
 		result[label] = make([]int, len(items))
 		for index, value := range items {
 			result[label][index] = value.(int)
+		}
+	}
+	return result
+}
+
+func convertConstraintMatchesAny(source interface{}) map[string][]interface{} {
+	// These casts are all safe because of the schema check.
+	result := make(map[string][]interface{})
+	matchMap := source.(map[string]interface{})
+	for label, values := range matchMap {
+		items := values.([]interface{})
+		result[label] = make([]interface{}, len(items))
+		for index, value := range items {
+			result[label][index] = value
 		}
 	}
 	return result

@@ -3,7 +3,7 @@
 
 package gomaasapi
 
-import "github.com/juju/utils/set"
+import "github.com/juju/collections/set"
 
 const (
 	// Capability constants.
@@ -38,8 +38,14 @@ type Controller interface {
 	// Zones lists all the zones known to the MAAS controller.
 	Zones() ([]Zone, error)
 
+	// Pools lists all the pools known to the MAAS controller.
+	Pools() ([]Pool, error)
+
 	// Machines returns a list of machines that match the params.
 	Machines(MachinesArgs) ([]Machine, error)
+
+	// GetMachine gets a single machine
+	GetMachine(systemID string) (Machine, error)
 
 	// AllocateMachine will attempt to allocate a machine to the user.
 	// If successful, the allocated machine is returned.
@@ -48,6 +54,9 @@ type Controller interface {
 	// ReleaseMachines will stop the specified machines, and release them
 	// from the user making them available to be allocated again.
 	ReleaseMachines(ReleaseMachinesArgs) error
+
+	// CreateMachine will create a new machine with the provided parameters
+	CreateMachine(CreateMachineArgs) (Machine, error)
 
 	// Devices returns a list of devices that match the params.
 	Devices(DevicesArgs) ([]Device, error)
@@ -66,6 +75,18 @@ type Controller interface {
 	// file without sending the content of the file, we can return a File
 	// instance here too.
 	AddFile(AddFileArgs) error
+
+	// Returns the DNS Domain Managed By MAAS
+	Domains() ([]Domain, error)
+
+	// Returns the set of all tags
+	Tags() ([]Tag, error)
+
+	// Retuns a aspecific tag or an error if it doesn't exist
+	GetTag(name string) (Tag, error)
+
+	// Creates a new tag, or returns an error if the tag already exists
+	CreateTag(args CreateTagArgs) (Tag, error)
 }
 
 // File represents a file stored in the MAAS controller.
@@ -142,6 +163,18 @@ type Zone interface {
 	Description() string
 }
 
+// Pool is just a logical separation of resources.
+type Pool interface {
+	// The name of the resource pool
+	Name() string
+	Description() string
+}
+
+type Domain interface {
+	// The name of the Domain
+	Name() string
+}
+
 // BootResource is the bomb... find something to say here.
 type BootResource interface {
 	ID() int
@@ -160,6 +193,7 @@ type Device interface {
 	FQDN() string
 	IPAddresses() []string
 	Zone() Zone
+	Pool() Pool
 
 	// Parent returns the SystemID of the Parent. Most often this will be a
 	// Machine.
@@ -215,6 +249,13 @@ type Machine interface {
 	// specified. If there is no match, nil is returned.
 	Interface(id int) Interface
 
+	// Update allows editing of some of the machine's properties
+	Update(args UpdateMachineArgs) error
+
+	// CreateBond creates a bond with the provided interfaces and returns the
+	// newly created bond interface.
+	CreateBond(args CreateMachineBondArgs) (Interface, error)
+
 	// PhysicalBlockDevices returns all the physical block devices on the machine.
 	PhysicalBlockDevices() []BlockDevice
 	// PhysicalBlockDevice returns the physical block device for the machine
@@ -223,8 +264,19 @@ type Machine interface {
 
 	// BlockDevices returns all the physical and virtual block devices on the machine.
 	BlockDevices() []BlockDevice
+	// BlockDevice returns the block device for the machine that matches the
+	// id specified. If there is no match, nil is returned.
+	BlockDevice(id int) BlockDevice
+
+	// Partition returns the partition for the machine that matches the
+	// id specified. If there is no match, nil is returned.
+	Partition(id int) Partition
 
 	Zone() Zone
+	Pool() Pool
+
+	// Commision makes a new node Ready
+	Commission(CommissionArgs) error
 
 	// Start the machine and install the operating system specified in the args.
 	Start(StartArgs) error
@@ -232,6 +284,9 @@ type Machine interface {
 	// CreateDevice creates a new Device with this Machine as the parent.
 	// The device will have one interface that is linked to the specified subnet.
 	CreateDevice(CreateMachineDeviceArgs) (Device, error)
+
+	// Delete removes the machine from maas
+	Delete() error
 }
 
 // Space is a name for a collection of Subnets.
@@ -334,33 +389,41 @@ type FileSystem interface {
 	UUID() string
 }
 
+// StorageDevice represents any piece of storage on a machine. Partition
+// and BlockDevice are storage devices.
+type StorageDevice interface {
+	// Type is the type of item.
+	Type() string
+
+	// ID is the unique ID of the item of that type.
+	ID() int
+
+	Path() string
+	UsedFor() string
+	Size() uint64
+	UUID() string
+	Tags() []string
+
+	// FileSystem may be nil if not mounted.
+	FileSystem() FileSystem
+}
+
 // Partition represents a partition of a block device. It may be mounted
 // as a filesystem.
 type Partition interface {
-	ID() int
-	Path() string
-	// FileSystem may be nil if not mounted.
-	FileSystem() FileSystem
-	UUID() string
-	// UsedFor is a human readable string.
-	UsedFor() string
-	// Size is the number of bytes in the partition.
-	Size() uint64
+	StorageDevice
 }
 
 // BlockDevice represents an entire block device on the machine.
 type BlockDevice interface {
-	ID() int
+	StorageDevice
+
 	Name() string
 	Model() string
 	IDPath() string
-	Path() string
-	UsedFor() string
-	Tags() []string
 
 	BlockSize() uint64
 	UsedSize() uint64
-	Size() uint64
 
 	Partitions() []Partition
 
@@ -381,4 +444,14 @@ type OwnerDataHolder interface {
 	// its value to "". All owner data is cleared when the object is
 	// released.
 	SetOwnerData(map[string]string) error
+}
+
+// Tag represents a MaaS device tag
+type Tag interface {
+	Name() string
+	Definition() string
+	Comment() string
+	Machines() ([]Machine, error)
+	AddToMachine(systemID string) error
+	RemoveFromMachine(systemID string) error
 }

@@ -80,7 +80,7 @@ func LoadDir(root string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(files) == 0 {
+	if len(files) == 0 && len(overrides) == 0 {
 		return nil, &ErrNoConfigsFound{Dir: root}
 	}
 
@@ -112,6 +112,9 @@ func LoadDir(root string) (*Config, error) {
 			result = c
 		}
 	}
+	if len(files) == 0 {
+		result = &Config{}
+	}
 
 	// Load all the overrides, and merge them into the config
 	for _, f := range overrides {
@@ -130,21 +133,6 @@ func LoadDir(root string) (*Config, error) {
 	result.Dir = rootAbs
 
 	return result, nil
-}
-
-// IsEmptyDir returns true if the directory given has no Terraform
-// configuration files.
-func IsEmptyDir(root string) (bool, error) {
-	if _, err := os.Stat(root); err != nil && os.IsNotExist(err) {
-		return true, nil
-	}
-
-	fs, os, err := dirFiles(root)
-	if err != nil {
-		return false, err
-	}
-
-	return len(fs) == 0 && len(os) == 0, nil
 }
 
 // Ext returns the Terraform configuration extension of the given
@@ -194,7 +182,7 @@ func dirFiles(dir string) ([]string, []string, error) {
 			// Only care about files that are valid to load
 			name := fi.Name()
 			extValue := ext(name)
-			if extValue == "" || isIgnoredFile(name) {
+			if extValue == "" || IsIgnoredFile(name) {
 				continue
 			}
 
@@ -215,9 +203,9 @@ func dirFiles(dir string) ([]string, []string, error) {
 	return files, overrides, nil
 }
 
-// isIgnoredFile returns true or false depending on whether the
+// IsIgnoredFile returns true or false depending on whether the
 // provided file name is a file that should be ignored.
-func isIgnoredFile(name string) bool {
+func IsIgnoredFile(name string) bool {
 	return strings.HasPrefix(name, ".") || // Unix-like hidden files
 		strings.HasSuffix(name, "~") || // vim
 		strings.HasPrefix(name, "#") && strings.HasSuffix(name, "#") // emacs
