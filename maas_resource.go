@@ -16,6 +16,9 @@ func resourceMAASDeployment() *schema.Resource {
 		Read:   resourceMAASDeploymentRead,
 		Update: resourceMAASDeploymentUpdate,
 		Delete: resourceMAASDeploymentDelete,
+		Importer: &schema.ResourceImporter{
+			State: schema.ImportStatePassthrough,
+		},
 
 		SchemaVersion: 1,
 
@@ -313,7 +316,9 @@ func resourceMAASMachine() *schema.Resource {
 		Read:   resourceMAASMachineRead,
 		Update: resourceMAASMachineUpdate,
 		Delete: resourceMAASMachineDelete,
-
+		Importer: &schema.ResourceImporter{
+			State: schema.ImportStatePassthrough,
+		},
 		SchemaVersion: 1,
 
 		Schema: map[string]*schema.Schema{
