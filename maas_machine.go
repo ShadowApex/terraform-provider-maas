@@ -282,10 +282,25 @@ func resourceMAASMachineRead(d *schema.ResourceData, meta interface{}) error {
 	d.Set("domain", strings.SplitN(machine.FQDN(), ".", 2)[1])
 	d.Set("mac_address", machine.BootInterface().MACAddress())
 
-	//d.Set("tags", machine.Tags())
-	//d.Set("commissioning_scripts", machine.Commissioning_scripts())
-	//d.Set("testing_scripts", machine.Testing_scripts())
-	//d.Set("interface", machine.Interface())
+	iface := machine.BootInterface()
+	if iface != nil {
+		ifaceLinks := iface.Links()
+		if len(ifaceLinks) > 0 {
+			d.Set("interface", []map[string]interface{}{
+				{
+					"name":   iface.Name(),
+					"mode":   strings.ToUpper(ifaceLinks[0].Mode()),
+					"subnet": ifaceLinks[0].Subnet().CIDR(),
+				},
+			})
+		}
+	}
+
+	d.Set("tags", machine.Tags())
+
+	// TODO: how do we handle auto-configured power management
+	// like iDRAC or IPMI?
+	//
 	//d.Set("power", machine.Power())
 
 	log.Printf("[DEBUG] Done reading machine %s", d.Id())
@@ -320,7 +335,52 @@ func resourceMAASMachineUpdate(d *schema.ResourceData, meta interface{}) error {
 			return err
 		}
 	}
-	// TODO: tags and power
+
+	if d.HasChange("tags") {
+		hasTags := map[string]gomaasapi.Tag{}
+		for _, t := range machine.Tags() {
+			tag, err := controller.GetTag(t)
+			if err != nil {
+				return err
+			}
+			hasTags[t] = tag
+		}
+		wantTags := map[string]struct{}{}
+		for _, t := range d.Get("tags").([]string) {
+			wantTags[t] = struct{}{}
+		}
+		// add any missing tags
+		for wantTag := range wantTags {
+			_, has := hasTags[wantTag]
+			if !has {
+				var maasTag gomaasapi.Tag
+				maasTag, err = controller.GetTag(wantTag)
+				if err != nil {
+					log.Printf("[DEBUG] Creating new MaaS tag %s", wantTag)
+					maasTag, err = controller.CreateTag(gomaasapi.CreateTagArgs{Name: wantTag})
+					if err != nil {
+						return fmt.Errorf("Failed to get or create tag %s: %v", wantTag, err)
+					}
+				}
+				log.Printf("[DEBUG] Adding tag %s to %s", wantTag, machine.Hostname())
+				err := maasTag.AddToMachine(machine.SystemID())
+				if err != nil {
+					return fmt.Errorf("Failed to add tag %s to %s", wantTag, machine.Hostname())
+				}
+			}
+		}
+		// remove any extra tags
+		for name, hasTag := range hasTags {
+			_, doesWant := wantTags[name]
+			if !doesWant {
+				log.Printf("[DEBUG] Removing extra tag %s from %s", name, machine.Hostname())
+				hasTag.RemoveFromMachine(machine.SystemID())
+			}
+
+		}
+	}
+
+	// TODO: power
 	d.Partial(false)
 
 	log.Printf("[DEBUG] Done Modifying machine %s", d.Id())

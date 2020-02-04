@@ -137,32 +137,10 @@ func resourceMAASDeploymentRead(d *schema.ResourceData, meta interface{}) error 
 	log.Printf("[DEBUG] Reading deployment (%s) information.\n", d.Id())
 
 	controller := meta.(*Config).Controller
-	machine, err := controller.GetMachine(d.Id())
+	_, err := controller.GetMachine(d.Id())
 	if err != nil {
 		return err
 	}
-
-	d.Set("architecture", machine.Architecture())
-	d.Set("hostname", machine.Hostname())
-	//d.Set("boot_type", machine.Boot_type())
-	//d.Set("cpu_count", machine.CPUCount())
-	d.Set("distro_series", machine.DistroSeries())
-	//d.Set("ip_addresses", machine.Ip_addresses())
-	//d.Set("memory", machine.Memory())
-	//d.Set("netboot", machine.Netboot())
-	d.Set("osystem", machine.OperatingSystem())
-	//d.Set("owner", machine.Owner())
-	//d.Set("power_state", machine.Power_state())
-	//d.Set("resource_uri", machine.Resource_uri())
-	//d.Set("routers", machine.Routers())
-	//d.Set("status", machine.Status())
-	//d.Set("storage", machine.Storage())
-	//d.Set("swap_size", machine.Swap_size())
-	//d.Set("system_id", machine.System_id())
-	//d.Set("tag_names", machine.Tag_names())
-	//d.Set("user_data", machine.User_data())
-	d.Set("hwe_kernel", machine.HWEKernel())
-	//d.Set("comment", machine.Comment())
 
 	log.Printf("[DEBUG] Done reading deployment %s", d.Id())
 

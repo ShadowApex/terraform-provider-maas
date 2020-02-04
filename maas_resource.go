@@ -280,7 +280,7 @@ func resourceMAASMachine() *schema.Resource {
 			"architecture": {
 				Type:     schema.TypeString,
 				Optional: true,
-				Default:  "amd64",
+				Default:  "amd64/generic",
 				ForceNew: true,
 			},
 			"mac_address": {
@@ -312,25 +312,25 @@ func resourceMAASMachine() *schema.Resource {
 			"enable_ssh": {
 				Type:     schema.TypeBool,
 				Optional: true,
-				ForceNew: true,
+				ForceNew: false,
 				Default:  false,
 			},
 			"skip_bmc_config": {
 				Type:     schema.TypeBool,
 				Optional: true,
-				ForceNew: true,
+				ForceNew: false,
 				Default:  false,
 			},
 			"skip_networking": {
 				Type:     schema.TypeBool,
 				Optional: true,
-				ForceNew: true,
+				ForceNew: false,
 				Default:  false,
 			},
 			"skip_storage": {
 				Type:     schema.TypeBool,
 				Optional: true,
-				ForceNew: true,
+				ForceNew: false,
 				Default:  false,
 			},
 			"commissioning_scripts": {
