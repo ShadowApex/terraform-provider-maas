@@ -167,6 +167,15 @@ func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
 
 	controller := meta.(*Config).Controller
 
+	// Attempt to create a new device (it might already exist)
+
+	createArgs := makeCreateMachineArgs(d)
+	_, err := controller.CreateMachine(createArgs)
+	if err != nil {
+		// is error "already exists?"
+		log.Printf("[ERROR] [resourceMAASMachineCreate] Creating a device failed, it might already exist: %v.", err)
+	}
+
 	macAddressVal, set := d.GetOk("mac_address")
 	if !set {
 		return fmt.Errorf("Missing mac_address value")
@@ -176,13 +185,8 @@ func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
 		return fmt.Errorf("Invalid type for mac_address field")
 	}
 
-	// Attempt to create a new device (it might already exist)
-
-	createArgs := makeCreateMachineArgs(d)
-	_, err := controller.CreateMachine(createArgs)
-	if err != nil {
-		// is error "already exists?"
-		log.Printf("[ERROR] [resourceMAASMachineCreate] Creating a device with mac: %s failed, it might already exist: %v.", macAddress, err)
+	if macAddress == "" {
+		return fmt.Errorf("Empty mac_address value")
 	}
 
 	// Locate the machine we either just created or was already auto-created
