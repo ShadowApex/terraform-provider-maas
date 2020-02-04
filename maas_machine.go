@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/terraform/helper/resource"
@@ -162,7 +163,7 @@ func updateMachineInterfaces(d *schema.ResourceData, controller gomaasapi.Contro
 
 // resourceMAASMachineCreate Manages the commisioning of a new maas node
 func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
-	log.Println("[DEBUG] [resourceMAASMachineCreate] Launching new maas_node")
+	log.Println("[DEBUG] [resourceMAASMachineCreate] Launching new machine")
 
 	controller := meta.(*Config).Controller
 
@@ -191,7 +192,7 @@ func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 	if len(machines) == 0 {
-		log.Printf("[DEBUG] [resourceMAASMachineCreate] no nodes with mac: %v.", macAddress)
+		log.Printf("[DEBUG] [resourceMAASMachineCreate] no machine with mac: %v.", macAddress)
 		return fmt.Errorf("Failed to create or locate machine with mac %s", macAddress)
 	}
 	machine := machines[0]
@@ -202,8 +203,8 @@ func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
 	machineArgs := makeUpdateMachineArgs(d)
 	err = machine.Update(machineArgs)
 	if err != nil {
-		log.Println("[DEBUG] Unable to update node")
-		return fmt.Errorf("Failed to update node options: %v", err)
+		log.Println("[DEBUG] Unable to update machine")
+		return fmt.Errorf("Failed to update machine options: %v", err)
 	}
 
 	// add tags
@@ -211,7 +212,7 @@ func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
 		for i := range tags.([]interface{}) {
 			err := machineUpdateTags(meta.(*Config).Controller, machine, tags.([]interface{})[i].(string))
 			if err != nil {
-				log.Printf("[ERROR] Unable to update node (%s) with tag (%s)", d.Id(), tags.([]interface{})[i].(string))
+				log.Printf("[ERROR] Unable to update machine (%s) with tag (%s)", d.Id(), tags.([]interface{})[i].(string))
 			}
 		}
 	}
@@ -263,12 +264,32 @@ func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
-	return resourceMAASMachineUpdate(d, meta)
+	return resourceMAASMachineRead(d, meta)
 }
 
 // resourceMAASMachineRead read node information from a maas node
 func resourceMAASMachineRead(d *schema.ResourceData, meta interface{}) error {
-	log.Printf("[DEBUG] Reading node (%s) information.\n", d.Id())
+	log.Printf("[DEBUG] Reading machine (%s) information.\n", d.Id())
+
+	controller := meta.(*Config).Controller
+	machine, err := controller.GetMachine(d.Id())
+	if err != nil {
+		return err
+	}
+
+	d.Set("architecture", machine.Architecture())
+	d.Set("hostname", machine.Hostname())
+	d.Set("domain", strings.SplitN(machine.FQDN(), ".", 2)[1])
+	d.Set("mac_address", machine.BootInterface().MACAddress())
+
+	//d.Set("tags", machine.Tags())
+	//d.Set("commissioning_scripts", machine.Commissioning_scripts())
+	//d.Set("testing_scripts", machine.Testing_scripts())
+	//d.Set("interface", machine.Interface())
+	//d.Set("power", machine.Power())
+
+	log.Printf("[DEBUG] Done reading machine %s", d.Id())
+
 	return nil
 }
 
@@ -276,12 +297,34 @@ func resourceMAASMachineRead(d *schema.ResourceData, meta interface{}) error {
 func resourceMAASMachineUpdate(d *schema.ResourceData, meta interface{}) error {
 	log.Printf("[DEBUG] [resourceMAASMachineUpdate] Modifying machine %s\n", d.Id())
 
-	d.Partial(true)
+	controller := meta.(*Config).Controller
+	machine, err := controller.GetMachine(d.Id())
+	if err != nil {
+		return err
+	}
 
+	d.Partial(true)
+	updateArgs := gomaasapi.UpdateMachineArgs{}
+	needsUpdate := false
+	if d.HasChange("hostname") {
+		updateArgs.Hostname = d.Get("hostname").(string)
+		needsUpdate = true
+	}
+	if d.HasChange("domain") {
+		updateArgs.Domain = d.Get("domain").(string)
+		needsUpdate = true
+	}
+	if needsUpdate {
+		err := machine.Update(updateArgs)
+		if err != nil {
+			return err
+		}
+	}
+	// TODO: tags and power
 	d.Partial(false)
 
-	log.Printf("[DEBUG] Done Modifying node %s", d.Id())
-	return resourceMAASMachineRead(d, meta)
+	log.Printf("[DEBUG] Done Modifying machine %s", d.Id())
+	return nil
 }
 
 // resourceMAASDeploymentDelete will release the commisioning
@@ -290,13 +333,13 @@ func resourceMAASMachineDelete(d *schema.ResourceData, meta interface{}) error {
 	controller := meta.(*Config).Controller
 	machines, err := controller.Machines(gomaasapi.MachinesArgs{SystemIDs: []string{d.Id()}})
 	if err != nil {
-		log.Printf("[ERROR] Unable to delete node (%s): %v", d.Id(), err)
+		log.Printf("[ERROR] Unable to delete machine (%s): %v", d.Id(), err)
 	}
 	if len(machines) == 0 {
 		return fmt.Errorf("Machine with id %s does not exist", d.Id())
 	}
 	err = machines[0].Delete()
-	log.Printf("[DEBUG] [resourceMAASMachineDelete] Node (%s) deleted", d.Id())
+	log.Printf("[DEBUG] [resourceMAASMachineDelete] machine (%s) deleted", d.Id())
 	d.SetId("")
 	return nil
 }

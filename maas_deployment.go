@@ -128,34 +128,44 @@ func resourceMAASDeploymentCreate(d *schema.ResourceData, meta interface{}) erro
 		return fmt.Errorf("[ERROR] [resourceMAASDeploymentCreate] Error waiting for deployment (%s) to become deployed: %s", d.Id(), err)
 	}
 
-	updateArgs := gomaasapi.UpdateMachineArgs{}
-	// update hostname
-	if hostname, ok := d.GetOk("deploy_hostname"); ok {
-		updateArgs.Hostname = hostname.(string)
-	}
-	err = machine.Update(updateArgs)
-	if err != nil {
-		log.Println("[DEBUG] Unable to update node")
-		return err
-	}
-
-	// update node tags
-	if tags, ok := d.GetOk("deploy_tags"); ok {
-		for i := range tags.([]interface{}) {
-			err := machineUpdateTags(controller, machine, tags.([]interface{})[i].(string))
-			if err != nil {
-				log.Printf("[ERROR] Unable to update node (%s) with tag (%s)", d.Id(), tags.([]interface{})[i].(string))
-			}
-		}
-	}
-
-	return resourceMAASDeploymentUpdate(d, meta)
+	return resourceMAASDeploymentRead(d, meta)
 }
 
 // resourceMAASDeploymentRead read deployment information from a maas node
 // TODO: remove or do something
 func resourceMAASDeploymentRead(d *schema.ResourceData, meta interface{}) error {
 	log.Printf("[DEBUG] Reading deployment (%s) information.\n", d.Id())
+
+	controller := meta.(*Config).Controller
+	machine, err := controller.GetMachine(d.Id())
+	if err != nil {
+		return err
+	}
+
+	d.Set("architecture", machine.Architecture())
+	d.Set("hostname", machine.Hostname())
+	//d.Set("boot_type", machine.Boot_type())
+	//d.Set("cpu_count", machine.CPUCount())
+	d.Set("distro_series", machine.DistroSeries())
+	//d.Set("ip_addresses", machine.Ip_addresses())
+	//d.Set("memory", machine.Memory())
+	//d.Set("netboot", machine.Netboot())
+	d.Set("osystem", machine.OperatingSystem())
+	//d.Set("owner", machine.Owner())
+	//d.Set("power_state", machine.Power_state())
+	//d.Set("resource_uri", machine.Resource_uri())
+	//d.Set("routers", machine.Routers())
+	//d.Set("status", machine.Status())
+	//d.Set("storage", machine.Storage())
+	//d.Set("swap_size", machine.Swap_size())
+	//d.Set("system_id", machine.System_id())
+	//d.Set("tag_names", machine.Tag_names())
+	//d.Set("user_data", machine.User_data())
+	d.Set("hwe_kernel", machine.HWEKernel())
+	//d.Set("comment", machine.Comment())
+
+	log.Printf("[DEBUG] Done reading deployment %s", d.Id())
+
 	return nil
 }
 
@@ -211,31 +221,6 @@ func resourceMAASDeploymentDelete(d *schema.ResourceData, meta interface{}) erro
 	if _, err := stateConf.WaitForState(); err != nil {
 		return fmt.Errorf(
 			"[ERROR] [resourceMAASDeploymentCreate] Error waiting for deployment (%s) to become ready: %s", d.Id(), err)
-	}
-
-	// remove deploy hostname if set
-	// note: we can't do this with the current gomaasapi because empty strings are not added
-	//if _, ok := d.GetOk("deploy_hostname"); ok {
-	//	params := url.Values{}
-	//	params.Set("hostname", "")
-	//	err := nodeUpdate(meta.(*Config).MAASObject, d.Id(), params)
-	//	if err != nil {
-	//		log.Printf("[DEBUG] Unable to reset hostname: %v", err)
-	//	}
-	//}
-
-	// remove deployed tags
-	if tags, ok := d.GetOk("deploy_tags"); ok {
-		for i := range tags.([]interface{}) {
-			tag, err := controller.GetTag(tags.([]interface{})[i].(string))
-			if err != nil {
-				log.Printf("[ERROR] Unable to update node (%s) with tag (%s)", d.Id(), tags.([]interface{})[i].(string))
-			}
-			err = tag.RemoveFromMachine(d.Id())
-			if err != nil {
-				log.Printf("[ERROR] Unable to update node (%s) with tag (%s)", d.Id(), tags.([]interface{})[i].(string))
-			}
-		}
 	}
 
 	log.Printf("[DEBUG] [resourceMAASDeploymentDelete] Node (%s) released", d.Id())
