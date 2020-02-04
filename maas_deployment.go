@@ -80,7 +80,21 @@ func resourceMAASDeploymentCreate(d *schema.ResourceData, meta interface{}) erro
 		some parameters that could be used to narrow down our selection (cpu_count, memory, etc.)
 	*/
 
-	controller := meta.(*Config).Controller
+	// Pick the appropriate controller instance
+	var controller gomaasapi.Controller
+	owner, hasOwner := d.GetOk("owner")
+	if !hasOwner {
+		// No owner specified, use the default controller
+		controller = meta.(*Config).Controller
+	} else {
+		// Use the appropriate controller for the owner. Changing the owner
+		// will trigger a re-creation
+		var ok bool
+		controller, ok = meta.(*Config).DeployControllers[owner.(string)]
+		if !ok {
+			return fmt.Errorf("[ERROR] [resourceMAASDeploymentCreate] No provider token configured for owner '%s'", owner.(string))
+		}
+	}
 
 	allocateArgs, err := makeAllocateArgs(d)
 	if err != nil {

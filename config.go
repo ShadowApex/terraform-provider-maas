@@ -144,29 +144,31 @@ func toNodeInfo(nodeObject *gomaasapi.MAASObject) (*NodeInfo, error) {
 
 // Config provider configuration
 type Config struct {
-	APIKey     string
-	APIURL     string
-	APIver     string
-	MAASObject *gomaasapi.MAASObject
-	Controller gomaasapi.Controller
+	APIKey            string
+	APIURL            string
+	APIver            string
+	DeployTokens      map[string]string
+	DeployControllers map[string]gomaasapi.Controller
+	Controller        gomaasapi.Controller
 }
 
 // Client authenticate to MAAS and create a session
 func (c *Config) Client() (interface{}, error) {
 	log.Println("[DEBUG] [Config.Client] Configuring the MAAS API client")
-	authClient, err := gomaasapi.NewAuthenticatedClient(
-		gomaasapi.AddAPIVersionToURL(c.APIURL, c.APIver), c.APIKey)
-	if err != nil {
-		log.Printf("[ERROR] [Config.Client] Unable to authenticate against the MAAS Server (%s)", c.APIURL)
-		return nil, err
-	}
-	c.MAASObject = gomaasapi.NewMAAS(*authClient)
-
 	controller, err := gomaasapi.NewController(gomaasapi.ControllerArgs{APIKey: c.APIKey, BaseURL: c.APIURL})
 	if err != nil {
 		return nil, err
 	}
 	c.Controller = controller
+
+	c.DeployControllers = map[string]gomaasapi.Controller{}
+	for k, v := range c.DeployTokens {
+		deployController, err := gomaasapi.NewController(gomaasapi.ControllerArgs{APIKey: v, BaseURL: c.APIURL})
+		if err != nil {
+			return nil, err
+		}
+		c.DeployControllers[k] = deployController
+	}
 
 	return c, nil
 }

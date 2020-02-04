@@ -112,6 +112,16 @@ func resourceMAASDeployment() *schema.Resource {
 				Type:     schema.TypeString,
 				Optional: true,
 			},
+
+			// This doesn't actually controll the owner
+			// it just forces a re-creation if the owner
+			// changes which can only be controlled by the
+			// maas token.
+			"owner": {
+				Type:     schema.TypeString,
+				Optional: true,
+				ForceNew: true,
+			},
 		},
 	}
 }
