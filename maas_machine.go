@@ -264,6 +264,26 @@ func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
+	// release the machine so it can be deployed by another user
+	err = controller.ReleaseMachines(gomaasapi.ReleaseMachinesArgs{SystemIDs: []string{machine.SystemID()}})
+	if err != nil {
+		return err
+	}
+	log.Printf("[DEBUG] [resourceMAASMachineCreate] Waiting for release (%s) to complete\n", d.Id())
+	releaseConf := &resource.StateChangeConf{
+		Pending:    []string{"Releasing"},
+		Target:     []string{"Ready"},
+		Refresh:    getMachineStatus(meta.(*Config).Controller, machine.SystemID()),
+		Timeout:    5 * time.Minute,
+		Delay:      60 * time.Second,
+		MinTimeout: 30 * time.Second,
+	}
+
+	_, err = releaseConf.WaitForState()
+	if err != nil {
+		return fmt.Errorf("Failed waiting for release (%s) to complete: %s", d.Id(), err)
+	}
+
 	return resourceMAASMachineRead(d, meta)
 }
 
