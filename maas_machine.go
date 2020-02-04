@@ -209,10 +209,10 @@ func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
 
 	// add tags
 	if tags, ok := d.GetOk("tags"); ok {
-		for i := range tags.([]interface{}) {
-			err := machineUpdateTags(meta.(*Config).Controller, machine, tags.([]interface{})[i].(string))
+		for _, item := range tags.(*schema.Set).List() {
+			err := machineUpdateTags(meta.(*Config).Controller, machine, item.(string))
 			if err != nil {
-				log.Printf("[ERROR] Unable to update machine (%s) with tag (%s)", d.Id(), tags.([]interface{})[i].(string))
+				log.Printf("[ERROR] Unable to update machine (%s) with tag (%s)", d.Id(), item.(string))
 			}
 		}
 	}

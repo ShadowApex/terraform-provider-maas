@@ -58,13 +58,6 @@ func resourceMAASDeployment() *schema.Resource {
 				ForceNew: true,
 			},
 
-			"tags": {
-				Type:     schema.TypeList,
-				Optional: true,
-				ForceNew: true,
-				Elem:     &schema.Schema{Type: schema.TypeString},
-			},
-
 			"release_erase": {
 				Type:     schema.TypeBool,
 				Optional: true,
@@ -85,155 +78,15 @@ func resourceMAASDeployment() *schema.Resource {
 				ForceNew: false,
 				Default:  false,
 			},
-			/*
-				"ip_addresses": {
-					Type:     schema.TypeList,
-					Optional: true,
-					ForceNew: true,
-					Elem:     &schema.Schema{Type: schema.TypeString},
-				},
-
-				"macaddress_set": {
-					Type:     schema.TypeList,
-					Optional: true,
-					ForceNew: true,
-					Elem: &schema.Resource{
-						Schema: map[string]*schema.Schema{
-							"mac_address": {
-								Type:     schema.TypeString,
-								Optional: true,
-								ForceNew: true,
-							},
-							"resource_uri": {
-								Type:     schema.TypeString,
-								Optional: true,
-								ForceNew: true,
-							},
-						},
-					},
-				},
-			*/
 			"memory": {
 				Type:     schema.TypeInt,
 				Optional: true,
 				ForceNew: true,
 			},
-			/*
-				"netboot": {
-					Type:     schema.TypeBool,
-					Optional: true,
-					ForceNew: true,
-				},
-			*/
 			"osystem": {
 				Type:     schema.TypeString,
 				Computed: true,
 			},
-			/*
-				"owner": {
-					Type:     schema.TypeString,
-					Optional: true,
-					ForceNew: true,
-				},
-
-				"physicalblockdevice_set": {
-					Type:     schema.TypeList,
-					Optional: true,
-					ForceNew: true,
-					Elem: &schema.Resource{
-						Schema: map[string]*schema.Schema{
-							"block_size": {
-								Type:     schema.TypeInt,
-								Optional: true,
-							},
-							"id": {
-								Type:     schema.TypeInt,
-								Optional: true,
-							},
-							"id_path": {
-								Type:     schema.TypeString,
-								Optional: true,
-							},
-							"model": {
-								Type:     schema.TypeString,
-								Optional: true,
-							},
-							"name": {
-								Type:     schema.TypeString,
-								Optional: true,
-							},
-							"path": {
-								Type:     schema.TypeString,
-								Optional: true,
-							},
-							"serial": {
-								Type:     schema.TypeString,
-								Optional: true,
-							},
-							"size": {
-								Type:     schema.TypeInt,
-								Optional: true,
-							},
-							"tags": {
-								Type:     schema.TypeList,
-								Optional: true,
-								Elem:     &schema.Schema{Type: schema.TypeString},
-							},
-						},
-					},
-				},
-				"power_state": {
-					Type:     schema.TypeString,
-					Optional: true,
-				},
-				"resource_uri": {
-					Type:     schema.TypeString,
-					Computed: true,
-				},
-				"routers": {
-					Type:     schema.TypeList,
-					Optional: true,
-					Elem:     &schema.Schema{Type: schema.TypeString},
-				},
-				"status": {
-					Type:     schema.TypeInt,
-					Optional: true,
-				},
-				"storage": {
-					Type:     schema.TypeInt,
-					Optional: true,
-				},
-				"swap_size": {
-					Type:     schema.TypeInt,
-					Optional: true,
-				},
-				"tag_names": {
-					Type:     schema.TypeList,
-					Optional: true,
-					Elem:     &schema.Schema{Type: schema.TypeString},
-				},
-
-				"zone": {
-					Type:     schema.TypeSet,
-					Optional: true,
-					Elem: &schema.Resource{
-						Schema: map[string]*schema.Schema{
-							"description": {
-								Type:     schema.TypeString,
-								Optional: true,
-							},
-							"name": {
-								Type:     schema.TypeString,
-								Optional: true,
-							},
-							"resource_uri": {
-								Type:     schema.TypeString,
-								Optional: true,
-							},
-						},
-					},
-				},
-			*/
 			"user_data": {
 				Type:     schema.TypeString,
 				Optional: true,
@@ -304,7 +157,7 @@ func resourceMAASMachine() *schema.Resource {
 				ForceNew: false,
 			},
 			"tags": {
-				Type:     schema.TypeList,
+				Type:     schema.TypeSet,
 				Optional: true,
 				ForceNew: false,
 				Elem:     &schema.Schema{Type: schema.TypeString},
@@ -363,15 +216,6 @@ func resourceMAASMachine() *schema.Resource {
 							Type:     schema.TypeString,
 							Required: true,
 						},
-						//"vlan": {
-						//	Type:     schema.TypeInt,
-						//	Required: true,
-						//},
-						//"tags": {
-						//	Type:     schema.TypeList,
-						//	Optional: true,
-						//	Elem:     &schema.Schema{Type: schema.TypeString},
-						//},
 						"bond": {
 							Type:     schema.TypeList,
 							Optional: true,
@@ -466,5 +310,3 @@ func resourceMAASMachine() *schema.Resource {
 		},
 	}
 }
-
-// TODO: add maas_node schema

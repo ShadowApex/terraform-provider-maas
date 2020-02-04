@@ -45,14 +45,6 @@ func makeAllocateArgs(d *schema.ResourceData) (*gomaasapi.AllocateMachineArgs, e
 		args.MinMemory = int(val)
 	}
 
-	tags, set := d.GetOk("tags")
-	if set {
-		args.Tags = make([]string, len(tags.([]interface{})))
-		for i := range tags.([]interface{}) {
-			args.Tags[i] = tags.([]interface{})[i].(string)
-		}
-	}
-
 	return args, nil
 }
 
@@ -60,8 +52,8 @@ func makeStartArgs(d *schema.ResourceData) gomaasapi.StartArgs {
 	args := gomaasapi.StartArgs{}
 
 	// get user data if defined
-	if user_data, ok := d.GetOk("user_data"); ok {
-		args.UserData = base64encode(user_data.(string))
+	if userData, ok := d.GetOk("user_data"); ok {
+		args.UserData = base64encode(userData.(string))
 	}
 
 	// get comment if defined
@@ -70,9 +62,9 @@ func makeStartArgs(d *schema.ResourceData) gomaasapi.StartArgs {
 	}
 
 	// get distro_series if defined
-	distro_series, ok := d.GetOk("distro_series")
+	distroSeries, ok := d.GetOk("distro_series")
 	if ok {
-		args.DistroSeries = distro_series.(string)
+		args.DistroSeries = distroSeries.(string)
 	}
 
 	return args
