@@ -346,8 +346,8 @@ func resourceMAASMachineUpdate(d *schema.ResourceData, meta interface{}) error {
 			hasTags[t] = tag
 		}
 		wantTags := map[string]struct{}{}
-		for _, t := range d.Get("tags").([]string) {
-			wantTags[t] = struct{}{}
+		for _, t := range d.Get("tags").([]interface{}) {
+			wantTags[t.(string)] = struct{}{}
 		}
 		// add any missing tags
 		for wantTag := range wantTags {
@@ -362,7 +362,7 @@ func resourceMAASMachineUpdate(d *schema.ResourceData, meta interface{}) error {
 						return fmt.Errorf("Failed to get or create tag %s: %v", wantTag, err)
 					}
 				}
-				log.Printf("[DEBUG] Adding tag %s to %s", wantTag, machine.Hostname())
+				log.Printf("[DEBUG] Adding tag %s to %s", maasTag.Name(), machine.Hostname())
 				err := maasTag.AddToMachine(machine.SystemID())
 				if err != nil {
 					return fmt.Errorf("Failed to add tag %s to %s", wantTag, machine.Hostname())
