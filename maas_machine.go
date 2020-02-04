@@ -370,7 +370,7 @@ func resourceMAASMachineUpdate(d *schema.ResourceData, meta interface{}) error {
 			hasTags[t] = tag
 		}
 		wantTags := map[string]struct{}{}
-		for _, t := range d.Get("tags").([]interface{}) {
+		for _, t := range d.Get("tags").(*schema.Set).List() {
 			wantTags[t.(string)] = struct{}{}
 		}
 		// add any missing tags
