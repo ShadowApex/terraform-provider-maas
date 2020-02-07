@@ -49,7 +49,9 @@ func makeAllocateArgs(d *schema.ResourceData) (*gomaasapi.AllocateMachineArgs, e
 }
 
 func makeStartArgs(d *schema.ResourceData) gomaasapi.StartArgs {
-	args := gomaasapi.StartArgs{}
+	args := gomaasapi.StartArgs{
+		DistroSeries: d.Get("distro_series").(string),
+	}
 
 	// get user data if defined
 	if userData, ok := d.GetOk("user_data"); ok {
@@ -61,15 +63,8 @@ func makeStartArgs(d *schema.ResourceData) gomaasapi.StartArgs {
 		args.Comment = comment.(string)
 	}
 
-	// get distro_series if defined
-	distroSeries, ok := d.GetOk("distro_series")
-	if ok {
-		args.DistroSeries = distroSeries.(string)
-	}
-
 	// kernel
-	kernel, ok := d.GetOk("kernel")
-	if ok {
+	if kernel, ok := d.GetOk("kernel"); ok {
 		args.Kernel = kernel.(string)
 	}
 
@@ -117,6 +112,7 @@ func resourceMAASDeploymentCreate(d *schema.ResourceData, meta interface{}) erro
 	d.SetId(machine.SystemID())
 
 	startArgs := makeStartArgs(d)
+	log.Printf("[DEBUG] Deploying with %v", startArgs)
 	if err = machine.Start(startArgs); err != nil {
 		log.Printf("[ERROR] [resourceMAASDeploymentCreate] Unable to power up node: %s\n", d.Id())
 		controller.ReleaseMachines(gomaasapi.ReleaseMachinesArgs{SystemIDs: []string{machine.SystemID()}})

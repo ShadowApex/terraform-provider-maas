@@ -48,7 +48,7 @@ func resourceMAASDeployment() *schema.Resource {
 
 			"distro_series": {
 				Type:     schema.TypeString,
-				Optional: true,
+				Required: true,
 				ForceNew: true,
 			},
 
