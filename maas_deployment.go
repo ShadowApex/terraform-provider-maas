@@ -67,6 +67,12 @@ func makeStartArgs(d *schema.ResourceData) gomaasapi.StartArgs {
 		args.DistroSeries = distroSeries.(string)
 	}
 
+	// kernel
+	kernel, ok := d.GetOk("kernel")
+	if ok {
+		args.Kernel = kernel.(string)
+	}
+
 	return args
 }
 
