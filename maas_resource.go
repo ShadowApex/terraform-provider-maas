@@ -290,7 +290,7 @@ func resourceMAASMachine() *schema.Resource {
 			"power": {
 				Type:     schema.TypeList,
 				Optional: true,
-				ForceNew: true,
+				ForceNew: false,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"type": {
