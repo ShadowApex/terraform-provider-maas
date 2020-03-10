@@ -145,8 +145,24 @@ func resourceMAASDeploymentRead(d *schema.ResourceData, meta interface{}) error 
 	log.Printf("[DEBUG] Reading deployment (%s) information.\n", d.Id())
 
 	controller := meta.(*Config).Controller
-	_, err := controller.GetMachine(d.Id())
+	machine, err := controller.GetMachine(d.Id())
 	if err != nil {
+		return err
+	}
+
+	if err := d.Set("distro_series", machine.DistroSeries()); err != nil {
+		return err
+	}
+
+	if err := d.Set("hostname", machine.Hostname()); err != nil {
+		return err
+	}
+
+	if err := d.Set("hwe_kernel", machine.HWEKernel()); err != nil {
+		return err
+	}
+
+	if err := d.Set("owner", machine.Owner()); err != nil {
 		return err
 	}
 
