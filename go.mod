@@ -14,4 +14,4 @@ require (
 	gopkg.in/mgo.v2 v2.0.0-20160818020120-3f83fa500528 // indirect
 )
 
-replace github.com/juju/gomaasapi => github.com/seanhoughton/gomaasapi v0.0.0-20200310165636-9c17aad738b4
+replace github.com/juju/gomaasapi => github.com/seanhoughton/gomaasapi v0.0.0-20200331175944-565e64bc346c

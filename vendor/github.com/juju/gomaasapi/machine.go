@@ -68,6 +68,8 @@ func (m *machine) updateFrom(other *machine) {
 	m.pool = other.pool
 	m.tags = other.tags
 	m.ownerData = other.ownerData
+	m.physicalBlockDevices = other.physicalBlockDevices
+	m.blockDevices = other.blockDevices
 }
 
 // SystemID implements Machine.
@@ -195,6 +197,7 @@ func (m *machine) StatusMessage() string {
 func (m *machine) PhysicalBlockDevices() []BlockDevice {
 	result := make([]BlockDevice, len(m.physicalBlockDevices))
 	for i, v := range m.physicalBlockDevices {
+		v.controller = m.controller
 		result[i] = v
 	}
 	return result
@@ -209,6 +212,7 @@ func (m *machine) PhysicalBlockDevice(id int) BlockDevice {
 func (m *machine) BlockDevices() []BlockDevice {
 	result := make([]BlockDevice, len(m.blockDevices))
 	for i, v := range m.blockDevices {
+		v.controller = m.controller
 		result[i] = v
 	}
 	return result
@@ -230,18 +234,52 @@ func blockDeviceById(id int, blockDevices []BlockDevice) BlockDevice {
 
 // Partition implements Machine.
 func (m *machine) Partition(id int) Partition {
-	return partitionById(id, m.BlockDevices())
+	p := partitionById(id, m.blockDevices)
+	if p != nil {
+		p.controller = m.controller
+	}
+	return p
 }
 
-func partitionById(id int, blockDevices []BlockDevice) Partition {
+func partitionById(id int, blockDevices []*blockdevice) *partition {
 	for _, blockDevice := range blockDevices {
-		for _, partition := range blockDevice.Partitions() {
-			if partition.ID() == id {
+		for _, partition := range blockDevice.partitions {
+			if partition.id == id {
 				return partition
 			}
 		}
 	}
 	return nil
+}
+
+// BlockDevices implements Machine (loaded dynamically)
+func (m *machine) VolumeGroups() ([]VolumeGroup, error) {
+	source, err := m.controller.get(m.nodesURI() + "volume-groups/")
+	if err != nil {
+		if svrErr, ok := errors.Cause(err).(ServerError); ok {
+			switch svrErr.StatusCode {
+			case http.StatusNotFound, http.StatusConflict:
+				return nil, errors.Wrap(err, NewBadRequestError(svrErr.BodyMessage))
+			case http.StatusForbidden:
+				return nil, errors.Wrap(err, NewPermissionError(svrErr.BodyMessage))
+			case http.StatusServiceUnavailable:
+				return nil, errors.Wrap(err, NewCannotCompleteError(svrErr.BodyMessage))
+			}
+		}
+		return nil, NewUnexpectedError(err)
+	}
+
+	vgs, err := readVolumeGroups(m.controller.apiVersion, source)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+
+	result := make([]VolumeGroup, len(vgs))
+	for i, v := range vgs {
+		v.controller = m.controller
+		result[i] = v
+	}
+	return result, nil
 }
 
 // Devices implements Machine.
@@ -674,7 +712,7 @@ func machine_2_0(source map[string]interface{}) (*machine, error) {
 		"system_id":  schema.String(),
 		"hostname":   schema.String(),
 		"fqdn":       schema.String(),
-		"owner":      schema.String(),
+		"owner":      schema.OneOf(schema.Nil(""), schema.String()),
 		"tag_names":  schema.List(schema.String()),
 		"owner_data": schema.StringMap(schema.String()),
 
@@ -697,6 +735,7 @@ func machine_2_0(source map[string]interface{}) (*machine, error) {
 
 		"physicalblockdevice_set": schema.List(schema.StringMap(schema.Any())),
 		"blockdevice_set":         schema.List(schema.StringMap(schema.Any())),
+		"volume_groups":           schema.List(schema.StringMap(schema.Any())),
 	}
 	defaults := schema.Defaults{
 		"architecture": "",
@@ -745,16 +784,18 @@ func machine_2_0(source map[string]interface{}) (*machine, error) {
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
+
 	architecture, _ := valid["architecture"].(string)
 	statusMessage, _ := valid["status_message"].(string)
 	hweKernel, _ := valid["hwe_kernel"].(string)
+	owner, _ := valid["owner"].(string)
 	result := &machine{
 		resourceURI: valid["resource_uri"].(string),
 
 		systemID:  valid["system_id"].(string),
 		hostname:  valid["hostname"].(string),
 		fqdn:      valid["fqdn"].(string),
-		owner:     valid["owner"].(string),
+		owner:     owner,
 		tags:      convertToStringSlice(valid["tag_names"]),
 		ownerData: convertToStringMap(valid["owner_data"]),
 
@@ -805,4 +846,130 @@ func convertToStringMap(field interface{}) map[string]string {
 		result[key] = value.(string)
 	}
 	return result
+}
+
+// CreateBlockDeviceArgs are required parameters
+type CreateBlockDeviceArgs struct {
+	Name      string // Required. Name of the block device.
+	Model     string // Optional. Model of the block device.
+	Serial    string // Optional. Serial number of the block device.
+	IDPath    string // Optional. Only used if model and serial cannot be provided. This should be a path that is fixed and doesn't change depending on the boot order or kernel version.
+	Size      int    // Required. Size of the block device.
+	BlockSize int    // Required. Block size of the block device.
+}
+
+// ToParams converts arguments to URL parameters
+func (a *CreateBlockDeviceArgs) toParams() *URLParams {
+	params := NewURLParams()
+	params.MaybeAdd("name", a.Name)
+	params.MaybeAdd("model", a.Model)
+	params.MaybeAdd("serial", a.Serial)
+	params.MaybeAdd("id_path", a.IDPath)
+	params.MaybeAddInt("size", a.Size)
+	params.MaybeAddInt("block_size", a.BlockSize)
+	return params
+}
+
+// Validate checks for invalid configuration
+func (a *CreateBlockDeviceArgs) Validate() error {
+	if a.Name == "" {
+		return fmt.Errorf("Name must be provided")
+	}
+	if a.Size <= 0 {
+		return fmt.Errorf("Size must be > 0")
+	}
+	if a.BlockSize <= 0 {
+		return fmt.Errorf("Block size must be > 0")
+	}
+	return nil
+}
+
+func (m *machine) nodesURI() string {
+	return strings.Replace(m.resourceURI, "machines", "nodes", 1)
+}
+
+// CreateBlockDevice implementes Machine
+func (m *machine) CreateBlockDevice(args CreateBlockDeviceArgs) (BlockDevice, error) {
+	if err := args.Validate(); err != nil {
+		return nil, errors.Trace(err)
+	}
+
+	params := args.toParams()
+	source, err := m.controller.post(m.nodesURI()+"blockdevices/", "", params.Values)
+	if err != nil {
+		if svrErr, ok := errors.Cause(err).(ServerError); ok {
+			switch svrErr.StatusCode {
+			case http.StatusNotFound:
+				return nil, errors.Wrap(err, NewNoMatchError(svrErr.BodyMessage))
+			case http.StatusForbidden:
+				return nil, errors.Wrap(err, NewPermissionError(svrErr.BodyMessage))
+			}
+		}
+		return nil, NewUnexpectedError(err)
+	}
+
+	response, err := readBlockDevice(m.controller.apiVersion, source)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	return response, nil
+}
+
+// CreateVolumeGroupArgs control creation of a volume group
+type CreateVolumeGroupArgs struct {
+	Name         string        // Required. Name of the volume group.
+	UUID         string        // Optional. (optional) UUID of the volume group.
+	BlockDevices []BlockDevice // Optional. Block devices to add to the volume group.
+	Partitions   []Partition   // Optional. Partitions to add to the volume group.
+}
+
+func (a *CreateVolumeGroupArgs) toParams() *URLParams {
+	params := NewURLParams()
+	params.MaybeAdd("name", a.Name)
+	params.MaybeAdd("uuid", a.UUID)
+	if a.BlockDevices != nil {
+		deviceIDs := []string{}
+		for _, device := range a.BlockDevices {
+			deviceIDs = append(deviceIDs, fmt.Sprintf("%d", device.ID()))
+		}
+		params.MaybeAdd("block_devices", strings.Join(deviceIDs, ","))
+	}
+	if a.Partitions != nil {
+		partitionIDs := []string{}
+		for _, partition := range a.Partitions {
+			partitionIDs = append(partitionIDs, fmt.Sprintf("%d", partition.ID()))
+		}
+		params.MaybeAdd("partitions", strings.Join(partitionIDs, ","))
+	}
+	return params
+}
+
+// Validate checks for errors
+func (a *CreateVolumeGroupArgs) Validate() error {
+	if a.Name == "" {
+		return fmt.Errorf("Name required")
+	}
+	return nil
+}
+
+func (m *machine) CreateVolumeGroup(args CreateVolumeGroupArgs) (VolumeGroup, error) {
+	params := args.toParams()
+	source, err := m.controller.post(m.nodesURI()+"volume-groups", "", params.Values)
+	if err != nil {
+		if svrErr, ok := errors.Cause(err).(ServerError); ok {
+			switch svrErr.StatusCode {
+			case http.StatusNotFound:
+				return nil, errors.Wrap(err, NewNoMatchError(svrErr.BodyMessage))
+			case http.StatusForbidden:
+				return nil, errors.Wrap(err, NewPermissionError(svrErr.BodyMessage))
+			}
+		}
+		return nil, NewUnexpectedError(err)
+	}
+
+	response, err := readVolumeGroup(m.controller.apiVersion, source)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	return response, nil
 }

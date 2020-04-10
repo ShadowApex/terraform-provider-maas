@@ -320,6 +320,18 @@ func resourceMAASMachineRead(d *schema.ResourceData, meta interface{}) error {
 		}
 	}
 
+	for i, device := range machine.BlockDevices() {
+		di := fmt.Sprintf("block_devices.%d", i)
+		d.Set(di+".name", device.Name())
+		d.Set(di+".model", device.Model())
+		d.Set(di+".id_path", device.IDPath())
+		d.Set(di+".size", device.Size())
+		d.Set(di+".block_size", device.BlockSize())
+		// outputs
+		d.Set(di+".uuid", device.UUID())
+		d.Set(di+".path", device.Path())
+	}
+
 	d.Set("tags", machine.Tags())
 
 	// TODO: how do we handle auto-configured power management
