@@ -195,7 +195,7 @@ github.com/jmespath/go-jmespath
 github.com/juju/collections/set
 # github.com/juju/errors v0.0.0-20170509134257-8234c829496a
 github.com/juju/errors
-# github.com/juju/gomaasapi v0.0.0-20190826212825-0ab1eb636aba => github.com/seanhoughton/gomaasapi v0.0.0-20200331175944-565e64bc346c
+# github.com/juju/gomaasapi v0.0.0-20190826212825-0ab1eb636aba => ../gomaasapi
 github.com/juju/gomaasapi
 # github.com/juju/loggo v0.0.0-20170605014607-8232ab8918d9
 github.com/juju/loggo

@@ -452,6 +452,22 @@ func (c *controller) GetMachine(systemID string) (Machine, error) {
 	return m, nil
 }
 
+func (c *controller) GetMachinePower(systemID string) (map[string]string, error) {
+	source, err := c.getOp("machines/"+systemID+"/", "power_parameters")
+	if err != nil {
+		return nil, NewUnexpectedError(err)
+	}
+	result := map[string]string{}
+	if _, ok := source.(map[string]interface{}); !ok {
+		return nil, errors.Trace(fmt.Errorf("Machine power was not a map."))
+	}
+	for k, v := range source.(map[string]interface{}) {
+		result[k] = fmt.Sprintf("%v", v)
+	}
+
+	return result, nil
+}
+
 func ownerDataMatches(ownerData, filter map[string]string) bool {
 	for key, value := range filter {
 		if ownerData[key] != value {

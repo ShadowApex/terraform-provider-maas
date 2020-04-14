@@ -35,6 +35,7 @@ type machine struct {
 
 	ipAddresses []string
 	powerState  string
+	powerType   string
 
 	// NOTE: consider some form of status struct
 	statusName    string
@@ -123,6 +124,11 @@ func (m *machine) CPUCount() int {
 // PowerState implements Machine.
 func (m *machine) PowerState() string {
 	return m.powerState
+}
+
+// PowerType implements Machine.
+func (m *machine) PowerType() string {
+	return m.powerType
 }
 
 // Zone implements Machine.
@@ -725,6 +731,7 @@ func machine_2_0(source map[string]interface{}) (*machine, error) {
 
 		"ip_addresses":   schema.List(schema.String()),
 		"power_state":    schema.String(),
+		"power_type":     schema.String(),
 		"status_name":    schema.String(),
 		"status_message": schema.OneOf(schema.Nil(""), schema.String()),
 
@@ -808,6 +815,7 @@ func machine_2_0(source map[string]interface{}) (*machine, error) {
 
 		ipAddresses:   convertToStringSlice(valid["ip_addresses"]),
 		powerState:    valid["power_state"].(string),
+		powerType:     valid["power_type"].(string),
 		statusName:    valid["status_name"].(string),
 		statusMessage: statusMessage,
 

@@ -47,6 +47,9 @@ type Controller interface {
 	// GetMachine gets a single machine
 	GetMachine(systemID string) (Machine, error)
 
+	// GetMachine gets the power parameters of a single machine
+	GetMachinePower(systemID string) (map[string]string, error)
+
 	// AllocateMachine will attempt to allocate a machine to the user.
 	// If successful, the allocated machine is returned.
 	AllocateMachine(AllocateMachineArgs) (Machine, ConstraintMatches, error)
@@ -231,6 +234,7 @@ type Machine interface {
 
 	IPAddresses() []string
 	PowerState() string
+	PowerType() string
 
 	// Devices returns a list of devices that match the params and have
 	// this Machine as the parent.
@@ -359,6 +363,8 @@ type Interface interface {
 	VLAN() VLAN
 	Links() []Link
 
+	Params() InterfaceParams
+
 	MACAddress() string
 	EffectiveMTU() int
 
@@ -378,6 +384,18 @@ type Interface interface {
 	// UnlinkSubnet will remove the Link to the subnet, and release the IP
 	// address associated if there is one.
 	UnlinkSubnet(Subnet) error
+}
+
+// InterfaceParams represents the network interface parameters of an interface.
+type InterfaceParams interface {
+	BridgeSTP() bool
+	BridgeFD() int
+	BondMiimon() int
+	BondDownDelay() int
+	BondUpDelay() int
+	BondLACPRate() string
+	BondXmitHashPolicy() string
+	BondMode() string
 }
 
 // Link represents a network link between an Interface and a Subnet.

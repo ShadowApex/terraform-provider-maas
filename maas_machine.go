@@ -11,6 +11,15 @@ import (
 	"github.com/juju/gomaasapi"
 )
 
+// powerKeyMap maps MAAS power parameter keys to our Terraform power schema.
+var powerKeyMap map[string]string = map[string]string{
+	"power_address":   "address",
+	"power_boot_type": "type",
+	"power_user":      "user",
+	"power_pass":      "password",
+	"power_driver":    "driver",
+}
+
 func makeCreateMachineArgs(d *schema.ResourceData) gomaasapi.CreateMachineArgs {
 	args := gomaasapi.CreateMachineArgs{
 		Commission:   false, // we manage the commision state
@@ -260,7 +269,7 @@ func resourceMAASMachineCreate(d *schema.ResourceData, meta interface{}) error {
 
 	commissionedMachine, err := waitToCommissionConf.WaitForState()
 	if err != nil {
-		return fmt.Errorf("Failed waiting for commisioning (%s) to complete: %s", d.Id(), err)
+		return fmt.Errorf("Failed waiting for commissioning (%s) to complete: %s", d.Id(), err)
 	}
 
 	err = updateMachineInterfaces(d, controller, commissionedMachine.(gomaasapi.Machine))
@@ -301,47 +310,181 @@ func resourceMAASMachineRead(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
+	// Read the machine details
 	d.Set("architecture", machine.Architecture())
 	d.Set("hostname", machine.Hostname())
 	d.Set("domain", strings.SplitN(machine.FQDN(), ".", 2)[1])
-	d.Set("mac_address", machine.BootInterface().MACAddress())
 
-	iface := machine.BootInterface()
-	if iface != nil {
-		ifaceLinks := iface.Links()
-		if len(ifaceLinks) > 0 {
-			d.Set("interface", []map[string]interface{}{
-				{
-					"name":   iface.Name(),
-					"mode":   strings.ToUpper(ifaceLinks[0].Mode()),
-					"subnet": ifaceLinks[0].Subnet().CIDR(),
-				},
-			})
+	// Read the boot interface MAC address
+	ifaceBoot := machine.BootInterface()
+	if ifaceBoot != nil {
+		d.Set("mac_address", ifaceBoot.MACAddress())
+	}
+
+	// Read the interfaces
+	interfaces := []map[string]interface{}{}
+	for _, iface := range machine.InterfaceSet() {
+		log.Printf("[DEBUG] Found interface with type: %s", iface.Type())
+		// If the given interface has children, then we don't need to create it.
+		if len(iface.Children()) > 0 {
+			continue
 		}
+		ifaceTf := buildInterface(iface)
+		interfaces = append(interfaces, ifaceTf)
 	}
+	d.Set("interface", interfaces)
 
-	for i, device := range machine.BlockDevices() {
-		di := fmt.Sprintf("block_devices.%d", i)
-		d.Set(di+".name", device.Name())
-		d.Set(di+".model", device.Model())
-		d.Set(di+".id_path", device.IDPath())
-		d.Set(di+".size", device.Size())
-		d.Set(di+".block_size", device.BlockSize())
-		// outputs
-		d.Set(di+".uuid", device.UUID())
-		d.Set(di+".path", device.Path())
+	// Read the block devices
+	blockDevices := []map[string]interface{}{}
+	for _, device := range machine.PhysicalBlockDevices() {
+		log.Printf("[DEBUG] Found block device '%s'", device.Name())
+		blockDevices = append(blockDevices, buildBlockDevice(device))
 	}
+	d.Set("block_device", blockDevices)
 
+	// Read the volume groups
+	vgs, err := machine.VolumeGroups()
+	if err != nil {
+		log.Printf("[WARN] Error getting volume groups: %v", err)
+		vgs = []gomaasapi.VolumeGroup{}
+	}
+	volumeGroups := []map[string]interface{}{}
+	for _, vg := range vgs {
+		log.Printf("[DEBUG] Found volume group: %v", vg)
+		volumeGroups = append(volumeGroups, buildVolumeGroup(machine, vg))
+	}
+	d.Set("volume_group", volumeGroups)
+
+	// Read the tags
 	d.Set("tags", machine.Tags())
 
-	// TODO: how do we handle auto-configured power management
-	// like iDRAC or IPMI?
-	//
-	//d.Set("power", machine.Power())
+	// Handle power configuration
+	pwr, err := controller.GetMachinePower(d.Id())
+	if err != nil {
+		return err
+	}
+	d.Set("power", []map[string]interface{}{
+		buildPowerParams(machine, pwr),
+	})
 
 	log.Printf("[DEBUG] Done reading machine %s", d.Id())
 
 	return nil
+}
+
+func buildPowerParams(machine gomaasapi.Machine, powerCfg map[string]string) map[string]interface{} {
+	powerCfgTf := map[string]interface{}{}
+	powerCfgTf["type"] = machine.PowerType()
+	powerCfgTf["custom"] = powerCfg
+
+	return powerCfgTf
+}
+
+func buildVolumeGroup(machine gomaasapi.Machine, vg gomaasapi.VolumeGroup) map[string]interface{} {
+	volumeGroupTf := map[string]interface{}{}
+	volumeGroupTf["name"] = vg.Name()
+	volumeGroupTf["size"] = vg.Size()
+
+	// Get the physical volumes that comprise this volume group.
+	devices := []string{}
+	for _, device := range vg.Devices() {
+		log.Printf("Found parent device of VG: %#v", device)
+		devices = append(devices, device.Path())
+	}
+	volumeGroupTf["devices"] = devices
+
+	// Find the logical volumes that are part of this volume group.
+	logicalVolumes := []map[string]interface{}{}
+	for _, device := range machine.BlockDevices() {
+		// TODO: Figure out how to handle cases where we could falsely
+		// find a device that starts with the volume group name.
+		if strings.HasPrefix(device.Name(), fmt.Sprintf("%s-", vg.Name())) {
+			log.Printf("[DEBUG] Found logical device %v", device)
+			logicalVolumes = append(logicalVolumes, buildLogicalVolume(device))
+		}
+	}
+	volumeGroupTf["logical_volume"] = logicalVolumes
+
+	return volumeGroupTf
+}
+
+func buildLogicalVolume(device gomaasapi.BlockDevice) map[string]interface{} {
+	deviceTf := map[string]interface{}{}
+	deviceTf["name"] = device.Name()
+	deviceTf["fstype"] = device.FileSystem().Type()
+	deviceTf["size"] = device.Size()
+	mountPoint := device.FileSystem().MountPoint()
+	if mountPoint != "" {
+		deviceTf["mountpoint"] = mountPoint
+	}
+	log.Printf("[DEBUG] Found logical volume: %#v", deviceTf)
+
+	return deviceTf
+}
+
+func buildBlockDevice(device gomaasapi.BlockDevice) map[string]interface{} {
+	deviceTf := map[string]interface{}{}
+	deviceTf["name"] = device.Name()
+	deviceTf["model"] = device.Model()
+	deviceTf["id_path"] = device.IDPath()
+	deviceTf["size"] = device.Size()
+	deviceTf["block_size"] = device.BlockSize()
+	// outputs
+	deviceTf["uuid"] = device.UUID()
+	deviceTf["path"] = device.Path()
+
+	// Create partitions
+	partitions := []map[string]interface{}{}
+	for _, partition := range device.Partitions() {
+		partitions = append(partitions, buildPartition(partition))
+	}
+	deviceTf["partition"] = partitions
+	return deviceTf
+}
+
+func buildPartition(partition gomaasapi.Partition) map[string]interface{} {
+	partitionTf := map[string]interface{}{}
+	partitionTf["path"] = partition.Path()
+	partitionTf["fstype"] = partition.FileSystem().Type()
+	partitionTf["size"] = partition.Size()
+	mountPoint := partition.FileSystem().MountPoint()
+	if mountPoint != "" {
+		partitionTf["mountpoint"] = mountPoint
+	}
+	log.Printf("[DEBUG] Found partition: %#v", partitionTf)
+
+	return partitionTf
+}
+
+func buildInterface(iface gomaasapi.Interface) map[string]interface{} {
+	ifaceTf := map[string]interface{}{}
+	ifaceTf["name"] = iface.Name()
+	if len(iface.Links()) > 0 {
+		ifaceTf["mode"] = iface.Links()[0].Mode()
+		ifaceTf["subnet"] = iface.Links()[0].Subnet().CIDR()
+	}
+	if iface.Type() == "bond" {
+		bond := []map[string]interface{}{}
+		bond = append(bond, buildBond(iface))
+		ifaceTf["bond"] = bond
+	}
+
+	return ifaceTf
+}
+
+func buildBond(iface gomaasapi.Interface) map[string]interface{} {
+	bond := map[string]interface{}{}
+	bond["parents"] = iface.Parents()
+	bond["mac_address"] = iface.MACAddress()
+	params := iface.Params()
+	bond["miimon"] = params.BondMiimon()
+	bond["downdelay"] = params.BondDownDelay()
+	bond["updelay"] = params.BondUpDelay()
+	bond["lacp_rate"] = params.BondLACPRate()
+	bond["xmit_hash_policy"] = params.BondXmitHashPolicy()
+	bond["mode"] = params.BondMode()
+
+	return bond
 }
 
 // resourceMAASMachineUpdate update a node in terraform state

@@ -30,6 +30,8 @@ type interface_ struct {
 	macAddress   string
 	effectiveMTU int
 
+	params *interfaceParams
+
 	parents  []string
 	children []string
 }
@@ -45,6 +47,7 @@ func (i *interface_) updateFrom(other *interface_) {
 	i.links = other.links
 	i.macAddress = other.macAddress
 	i.effectiveMTU = other.effectiveMTU
+	i.params = other.params
 	i.parents = other.parents
 	i.children = other.children
 }
@@ -92,6 +95,11 @@ func (i *interface_) VLAN() VLAN {
 	return i.vlan
 }
 
+// Params implements Interface.
+func (i *interface_) Params() InterfaceParams {
+	return i.params
+}
+
 // Links implements Interface.
 func (i *interface_) Links() []Link {
 	result := make([]Link, len(i.links))
@@ -109,6 +117,95 @@ func (i *interface_) MACAddress() string {
 // EffectiveMTU implements Interface.
 func (i *interface_) EffectiveMTU() int {
 	return i.effectiveMTU
+}
+
+// interfaceParams is a struct for interface parameters.
+type interfaceParams struct {
+	bridgeSTP          bool
+	bridgeFD           int
+	bondMiimon         int
+	bondDownDelay      int
+	bondUpDelay        int
+	bondLACPRate       string
+	bondXmitHashPolicy string
+	bondMode           string
+}
+
+func (i *interfaceParams) BridgeSTP() bool {
+	return i.bridgeSTP
+}
+
+func (i *interfaceParams) BridgeFD() int {
+	return i.bridgeFD
+}
+
+func (i *interfaceParams) BondMiimon() int {
+	return i.bondMiimon
+}
+
+func (i *interfaceParams) BondDownDelay() int {
+	return i.bondDownDelay
+}
+
+func (i *interfaceParams) BondUpDelay() int {
+	return i.bondUpDelay
+}
+
+func (i *interfaceParams) BondLACPRate() string {
+	return i.bondLACPRate
+}
+
+func (i *interfaceParams) BondXmitHashPolicy() string {
+	return i.bondXmitHashPolicy
+}
+
+func (i *interfaceParams) BondMode() string {
+	return i.bondMode
+}
+
+func interfaceParams_2_0(source map[string]interface{}) (*interfaceParams, error) {
+	fields := schema.Fields{
+		"bridge_stp":            schema.OneOf(schema.Nil(""), schema.ForceInt()),
+		"bridge_fd":             schema.OneOf(schema.Nil(""), schema.ForceInt()),
+		"bond_miimon":           schema.OneOf(schema.Nil(""), schema.ForceInt()),
+		"bond_down_delay":       schema.OneOf(schema.Nil(""), schema.ForceInt()),
+		"bond_up_delay":         schema.OneOf(schema.Nil(""), schema.ForceInt()),
+		"bond_lacp_rate":        schema.OneOf(schema.Nil(""), schema.String()),
+		"bond_xmit_hash_policy": schema.OneOf(schema.Nil(""), schema.String()),
+		"bond_mode":             schema.OneOf(schema.Nil(""), schema.String()),
+	}
+	checker := schema.FieldMap(fields, nil)
+	coerced, err := checker.Coerce(source, nil)
+	if err != nil {
+		return nil, errors.Annotatef(err, "interface params 2.0 schema check failed")
+	}
+	valid := coerced.(map[string]interface{})
+	// From here we know that the map returned from the schema coercion
+	// contains fields of the right type.
+
+	// Since these fields are optional, we use the two-part cast assignment.
+	// If the case fails, then we get the default value we care about,
+	// which is the empty string
+	bridgeSTP, _ := valid["bridge_stp"].(bool)
+	bridgeFD, _ := valid["bridge_fd"].(int)
+	bondMiimon, _ := valid["bond_miimon"].(int)
+	bondDownDelay, _ := valid["bond_down_delay"].(int)
+	bondUpDelay, _ := valid["bond_up_delay"].(int)
+	bondLACPRate, _ := valid["bond_lacp_rate"].(string)
+	bondXmitHashPolicy, _ := valid["bond_xmit_hash_policy"].(string)
+	bondMode, _ := valid["bond_mode"].(string)
+
+	result := &interfaceParams{
+		bridgeSTP:          bridgeSTP,
+		bridgeFD:           bridgeFD,
+		bondMiimon:         bondMiimon,
+		bondDownDelay:      bondDownDelay,
+		bondUpDelay:        bondUpDelay,
+		bondLACPRate:       bondLACPRate,
+		bondXmitHashPolicy: bondXmitHashPolicy,
+		bondMode:           bondMode,
+	}
+	return result, nil
 }
 
 // UpdateInterfaceArgs is an argument struct for calling Interface.Update.
@@ -413,6 +510,8 @@ func interface_2_0(source map[string]interface{}) (*interface_, error) {
 		"mac_address":   schema.OneOf(schema.Nil(""), schema.String()),
 		"effective_mtu": schema.ForceInt(),
 
+		"params": schema.OneOf(schema.Nil(""), schema.String(), schema.StringMap(schema.Any())),
+
 		"parents":  schema.List(schema.String()),
 		"children": schema.List(schema.String()),
 	}
@@ -437,6 +536,14 @@ func interface_2_0(source map[string]interface{}) (*interface_, error) {
 		}
 	}
 
+	var params *interfaceParams
+	if paramsMap, ok := valid["params"].(map[string]interface{}); ok {
+		params, err = interfaceParams_2_0(paramsMap)
+		if err != nil {
+			return nil, errors.Trace(err)
+		}
+	}
+
 	links, err := readLinkList(valid["links"].([]interface{}), link_2_0)
 	if err != nil {
 		return nil, errors.Trace(err)
@@ -456,6 +563,8 @@ func interface_2_0(source map[string]interface{}) (*interface_, error) {
 
 		macAddress:   macAddress,
 		effectiveMTU: valid["effective_mtu"].(int),
+
+		params: params,
 
 		parents:  convertToStringSlice(valid["parents"]),
 		children: convertToStringSlice(valid["children"]),
