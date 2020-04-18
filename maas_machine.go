@@ -99,10 +99,20 @@ func updateMachineInterfaces(d *schema.ResourceData, controller gomaasapi.Contro
 		}
 	}
 
-	// Build a mapping of interface name to ID
+	// Build a mapping of interface name to ID, and delete any virtual ifaces
 	nameToIface := map[string]gomaasapi.Interface{}
 	for _, iface := range machine.InterfaceSet() {
 		log.Printf("[DEBUG] [updateMachineInterfaces] Found interface '%s' with id '%v'", iface.Name(), iface.ID())
+		// Delete all virtual interface types. These will be re-created
+		// if needed.
+		switch iface.Type() {
+		case "bond":
+			log.Printf("[DEBUG] [updateMachineInterfaces] Deleting virtual interface '%s'", iface.Name())
+			if err := iface.Delete(); err != nil {
+				return err
+			}
+			continue
+		}
 		nameToIface[iface.Name()] = iface
 	}
 
@@ -123,40 +133,19 @@ func updateMachineInterfaces(d *schema.ResourceData, controller gomaasapi.Contro
 			// create any bonds if such parameters exist
 			for _, b := range bonds {
 				bondParams := b.(map[string]interface{})
-
-				// create a new bond device
-				args := gomaasapi.CreateMachineBondArgs{
-					UpdateInterfaceArgs: gomaasapi.UpdateInterfaceArgs{
-						Name:               name,
-						BondMode:           bondParams["mode"].(string),
-						MACAddress:         bondParams["mac_address"].(string),
-						BondMiimon:         bondParams["miimon"].(int),
-						BondDownDelay:      bondParams["downdelay"].(int),
-						BondUpDelay:        bondParams["updelay"].(int),
-						BondLACPRate:       bondParams["lacp_rate"].(string),
-						BondXmitHashPolicy: bondParams["xmit_hash_policy"].(string),
-					},
-					Parents: []gomaasapi.Interface{},
-				}
-
-				if parents, ok := bondParams["parents"]; ok {
-					for _, parent := range parents.(*schema.Set).List() {
-						args.Parents = append(args.Parents, nameToIface[parent.(string)])
+				parents := []gomaasapi.Interface{}
+				if parentsBlock, ok := bondParams["parents"]; ok {
+					for _, parent := range parentsBlock.(*schema.Set).List() {
+						parents = append(parents, nameToIface[parent.(string)])
 					}
 				}
-
-				log.Printf("[DEBUG] [updateMachineInterfaces] Creating bond '%s' with parameters: %#v", name, args)
-				bondIface, err := machine.CreateBond(args)
+				nameToIface[name], err = createBond(machine, name, parents, bondParams)
 				if err != nil {
-					return fmt.Errorf("Failed to create bond: %v", err)
+					return err
 				}
-				nameToIface[name] = bondIface
 			}
 		}
 		iface := nameToIface[name]
-
-		// if iface.Type() == "bond" {
-		// }
 
 		// skip linking if no subnet is defined
 		if subnetCIDR == "" {
@@ -256,6 +245,30 @@ func updateMachineInterfaces(d *schema.ResourceData, controller gomaasapi.Contro
 	//}
 
 	return nil
+}
+
+// creates a new bond device on the given machine
+func createBond(machine gomaasapi.Machine, name string, parents []gomaasapi.Interface, bondParams map[string]interface{}) (gomaasapi.Interface, error) {
+	args := gomaasapi.CreateMachineBondArgs{
+		UpdateInterfaceArgs: gomaasapi.UpdateInterfaceArgs{
+			Name:               name,
+			BondMode:           bondParams["mode"].(string),
+			MACAddress:         bondParams["mac_address"].(string),
+			BondMiimon:         bondParams["miimon"].(int),
+			BondDownDelay:      bondParams["downdelay"].(int),
+			BondUpDelay:        bondParams["updelay"].(int),
+			BondLACPRate:       bondParams["lacp_rate"].(string),
+			BondXmitHashPolicy: bondParams["xmit_hash_policy"].(string),
+		},
+		Parents: parents,
+	}
+
+	log.Printf("[DEBUG] [createBond] Creating bond '%s' with parameters: %#v", name, args)
+	bondIface, err := machine.CreateBond(args)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to create bond: %v", err)
+	}
+	return bondIface, nil
 }
 
 // resourceMAASMachineCreate Manages the commisioning of a new maas node
