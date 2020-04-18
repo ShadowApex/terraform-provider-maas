@@ -197,49 +197,49 @@ func resourceMAASMachine() *schema.Resource {
 				Default:  false,
 			},
 			"commissioning_scripts": {
-				Type:     schema.TypeList,
+				Type:     schema.TypeSet,
 				Optional: true,
 				ForceNew: true,
 				Elem:     &schema.Schema{Type: schema.TypeString},
 			},
 			"testing_scripts": {
-				Type:     schema.TypeList,
+				Type:     schema.TypeSet,
 				Optional: true,
 				ForceNew: true,
 				Elem:     &schema.Schema{Type: schema.TypeString},
 			},
 			"volume_group": {
-				Type:     schema.TypeList,
+				Type:     schema.TypeSet,
 				Optional: true,
-				ForceNew: true,
+				ForceNew: false,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"name": {
 							Type:     schema.TypeString,
 							Required: true,
-							ForceNew: true,
+							ForceNew: false,
 						},
 						"devices": {
 							Type:     schema.TypeSet,
 							Required: true,
-							ForceNew: true,
+							ForceNew: false,
 							Elem:     &schema.Schema{Type: schema.TypeString},
 						},
 						"size": {
 							Type:     schema.TypeInt,
 							Required: true,
-							ForceNew: true,
+							ForceNew: false,
 						},
 						"logical_volume": {
-							Type:     schema.TypeList,
+							Type:     schema.TypeSet,
 							Optional: true,
-							ForceNew: true,
+							ForceNew: false,
 							Elem: &schema.Resource{
 								Schema: map[string]*schema.Schema{
 									"name": {
 										Type:     schema.TypeString,
 										Required: true,
-										ForceNew: true,
+										ForceNew: false,
 									},
 									"fstype": {
 										Type:     schema.TypeString,
@@ -248,11 +248,12 @@ func resourceMAASMachine() *schema.Resource {
 									"size": {
 										Type:     schema.TypeInt,
 										Required: true,
-										ForceNew: true,
+										ForceNew: false,
 									},
 									"mountpoint": {
 										Type:     schema.TypeString,
 										Optional: true,
+										ForceNew: false,
 									},
 								},
 							},
@@ -261,19 +262,15 @@ func resourceMAASMachine() *schema.Resource {
 				},
 			},
 			"block_device": {
-				Type:     schema.TypeList,
+				Type:     schema.TypeSet,
 				Optional: true,
-				ForceNew: true,
+				ForceNew: false,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"name": {
 							Type:     schema.TypeString,
 							Required: true,
-							ForceNew: true,
-						},
-						"model": {
-							Type:     schema.TypeString,
-							Optional: true,
+							ForceNew: false,
 						},
 						"serial": {
 							Type:     schema.TypeString,
@@ -282,18 +279,23 @@ func resourceMAASMachine() *schema.Resource {
 						"id_path": {
 							Type:     schema.TypeString,
 							Optional: true,
-							ForceNew: true,
+							ForceNew: false,
 						},
-						"size": {
-							Type:     schema.TypeInt,
-							Required: true,
-							ForceNew: true,
-						},
-						"block_size": {
-							Type:     schema.TypeInt,
-							Required: true,
-							ForceNew: true,
-						},
+						// These are static informational things
+						//"model": {
+						//	Type:     schema.TypeString,
+						//	Optional: true,
+						//},
+						//"size": {
+						//	Type:     schema.TypeInt,
+						//	Required: true,
+						//	ForceNew: true,
+						//},
+						//"block_size": {
+						//	Type:     schema.TypeInt,
+						//	Required: true,
+						//	ForceNew: true,
+						//},
 						"id": {
 							Type:     schema.TypeString,
 							Computed: true,
@@ -307,9 +309,9 @@ func resourceMAASMachine() *schema.Resource {
 							Computed: true,
 						},
 						"partition": {
-							Type:     schema.TypeList,
+							Type:     schema.TypeSet,
 							Optional: true,
-							ForceNew: true,
+							ForceNew: false,
 							Elem: &schema.Resource{
 								Schema: map[string]*schema.Schema{
 									"path": {
@@ -323,7 +325,7 @@ func resourceMAASMachine() *schema.Resource {
 									"size": {
 										Type:     schema.TypeInt,
 										Required: true,
-										ForceNew: true,
+										ForceNew: false,
 									},
 									"mountpoint": {
 										Type:     schema.TypeString,
@@ -336,9 +338,9 @@ func resourceMAASMachine() *schema.Resource {
 				},
 			},
 			"interface": {
-				Type:     schema.TypeList,
+				Type:     schema.TypeSet,
 				Optional: true,
-				ForceNew: true,
+				ForceNew: false,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"name": {
@@ -347,20 +349,20 @@ func resourceMAASMachine() *schema.Resource {
 						},
 						"subnet": {
 							Type:     schema.TypeString,
-							Required: true,
+							Optional: true,
 						},
 						"mode": {
 							Type:     schema.TypeString,
-							Required: true,
+							Optional: true,
 						},
 						"bond": {
-							Type:     schema.TypeList,
+							Type:     schema.TypeSet,
 							Optional: true,
-							ForceNew: true,
+							ForceNew: false,
 							Elem: &schema.Resource{
 								Schema: map[string]*schema.Schema{
 									"parents": {
-										Type:     schema.TypeList,
+										Type:     schema.TypeSet,
 										Required: true,
 										Elem:     &schema.Schema{Type: schema.TypeString},
 									},
@@ -414,7 +416,7 @@ func resourceMAASMachine() *schema.Resource {
 				},
 			},
 			"power": {
-				Type:     schema.TypeList,
+				Type:     schema.TypeSet,
 				Optional: true,
 				ForceNew: false,
 				Elem: &schema.Resource{

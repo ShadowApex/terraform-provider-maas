@@ -454,11 +454,9 @@ type CreateMachineBondArgs struct {
 
 func (a *CreateMachineBondArgs) toParams() *URLParams {
 	params := a.UpdateInterfaceArgs.toParams()
-	parents := []string{}
 	for _, p := range a.Parents {
-		parents = append(parents, fmt.Sprintf("%d", p.ID()))
+		params.MaybeAdd("parents", fmt.Sprintf("%d", p.ID()))
 	}
-	params.MaybeAdd("parents", strings.Join(parents, ","))
 	return params
 }
 
@@ -474,7 +472,7 @@ func (m *machine) CreateBond(args CreateMachineBondArgs) (_ Interface, err error
 	}
 
 	params := args.toParams()
-	source, err := m.controller.post(m.resourceURI+"interfaces/", "create_bond", params.Values)
+	source, err := m.controller.post(m.nodesURI()+"interfaces/", "create_bond", params.Values)
 	if err != nil {
 		if svrErr, ok := errors.Cause(err).(ServerError); ok {
 			switch svrErr.StatusCode {
@@ -491,6 +489,7 @@ func (m *machine) CreateBond(args CreateMachineBondArgs) (_ Interface, err error
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
+	response.controller = m.controller
 	return response, nil
 }
 

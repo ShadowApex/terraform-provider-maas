@@ -102,70 +102,158 @@ func updateMachineInterfaces(d *schema.ResourceData, controller gomaasapi.Contro
 	// Build a mapping of interface name to ID
 	nameToIface := map[string]gomaasapi.Interface{}
 	for _, iface := range machine.InterfaceSet() {
+		log.Printf("[DEBUG] [updateMachineInterfaces] Found interface '%s' with id '%v'", iface.Name(), iface.ID())
 		nameToIface[iface.Name()] = iface
 	}
 
-	for i := 0; i < d.Get("interface.#").(int); i++ {
-		name := d.Get(fmt.Sprintf("interface.%d.name", i)).(string)
-		log.Printf("[DEBUG] [resourceMAASMachineCreate] Updating interface %s", name)
-		if bondBlock, ok := d.GetOk(fmt.Sprintf("interface.%d.name.bond.0", i)); ok {
-			bondParams := bondBlock.(*schema.ResourceData)
-			log.Printf("[DEBUG] [resourceMAASMachineCreate] Creating bond %s", name)
-			// create a new bond device
-			args := gomaasapi.CreateMachineBondArgs{
-				UpdateInterfaceArgs: gomaasapi.UpdateInterfaceArgs{
-					BondMode:           bondParams.Get("mode").(string),
-					MACAddress:         bondParams.Get("mac_address").(string),
-					BondMiimon:         bondParams.Get("miimon").(int),
-					BondDownDelay:      bondParams.Get("downdelay").(int),
-					BondUpDelay:        bondParams.Get("updelay").(int),
-					BondLACPRate:       bondParams.Get("lacp_rate").(string),
-					BondXmitHashPolicy: bondParams.Get("xmit_hash_policy").(string),
-				},
-				Parents: []gomaasapi.Interface{},
-			}
+	// Loop through all defined interfaces
+	interfaces := d.Get("interface").(*schema.Set)
+	for _, item := range interfaces.List() {
+		log.Printf("[DEBUG] [updateMachineInterfaces] Found defined interface: '%#v'", item)
+		ifaceBlock := item.(map[string]interface{})
+		name := ifaceBlock["name"].(string)
+		subnetCIDR := ifaceBlock["subnet"].(string)
+		mode := ifaceBlock["mode"].(string)
+		bonds := ifaceBlock["bond"].(*schema.Set).List()
 
-			if parents, ok := bondParams.GetOk("parents"); ok {
-				for _, parent := range parents.([]interface{}) {
-					args.Parents = append(args.Parents, parent.(gomaasapi.Interface))
+		// get the interface from MAAS
+		if _, ok := nameToIface[name]; !ok {
+			log.Printf("[DEBUG] [updateMachineInterfaces] Interface '%s' does not exist yet", name)
+
+			// create any bonds if such parameters exist
+			for _, b := range bonds {
+				bondParams := b.(map[string]interface{})
+
+				// create a new bond device
+				args := gomaasapi.CreateMachineBondArgs{
+					UpdateInterfaceArgs: gomaasapi.UpdateInterfaceArgs{
+						Name:               name,
+						BondMode:           bondParams["mode"].(string),
+						MACAddress:         bondParams["mac_address"].(string),
+						BondMiimon:         bondParams["miimon"].(int),
+						BondDownDelay:      bondParams["downdelay"].(int),
+						BondUpDelay:        bondParams["updelay"].(int),
+						BondLACPRate:       bondParams["lacp_rate"].(string),
+						BondXmitHashPolicy: bondParams["xmit_hash_policy"].(string),
+					},
+					Parents: []gomaasapi.Interface{},
 				}
-			}
 
-			bondIface, err := machine.CreateBond(args)
-			if err != nil {
-				return fmt.Errorf("Failed to create bond: %v", err)
+				if parents, ok := bondParams["parents"]; ok {
+					for _, parent := range parents.(*schema.Set).List() {
+						args.Parents = append(args.Parents, nameToIface[parent.(string)])
+					}
+				}
+
+				log.Printf("[DEBUG] [updateMachineInterfaces] Creating bond '%s' with parameters: %#v", name, args)
+				bondIface, err := machine.CreateBond(args)
+				if err != nil {
+					return fmt.Errorf("Failed to create bond: %v", err)
+				}
+				nameToIface[name] = bondIface
 			}
-			nameToIface[name] = bondIface
+		}
+		iface := nameToIface[name]
+
+		// if iface.Type() == "bond" {
+		// }
+
+		// skip linking if no subnet is defined
+		if subnetCIDR == "" {
+			continue
 		}
 
-		if iface, ok := nameToIface[name]; ok {
-			// link the device to a subnet
-			subnetCIDR := d.Get(fmt.Sprintf("interface.%d.subnet", i)).(string)
-			subnet, ok := cidrToSubnet[subnetCIDR]
-			if !ok {
-				return fmt.Errorf("No subnet CIDR %s exists", subnetCIDR)
-			}
+		// link the device to a subnet
+		subnet, ok := cidrToSubnet[subnetCIDR]
+		if !ok {
+			return fmt.Errorf("No subnet CIDR %s exists", subnetCIDR)
+		}
 
-			// unlink first
-			err := iface.UnlinkSubnet(subnet)
+		// unlink first
+		for _, link := range iface.Links() {
+			if link.Subnet() == nil {
+				continue
+			}
+			log.Printf("[DEBUG] Unlinking interface %s from subnet %s", name, link.Subnet().CIDR())
+			err := iface.UnlinkSubnet(link.Subnet())
 			if err != nil {
 				return err
 			}
+		}
 
-			// now link the correct subnet
-			mode := d.Get(fmt.Sprintf("interface.%d.mode", i)).(string)
-			log.Printf("[DEBUG] [resourceMAASMachineCreate] Linking interface %s to subnet %s (mode: %s)", name, subnetCIDR, mode)
-			args := gomaasapi.LinkSubnetArgs{
-				Mode:   gomaasapi.InterfaceLinkMode(mode),
-				Subnet: subnet,
-			}
-
-			err = iface.LinkSubnet(args)
-			if err != nil {
-				return err
-			}
+		// now link the correct subnet
+		log.Printf("[DEBUG] [updateMachineInterfaces] Linking interface %s to subnet %s (mode: %s)", name, subnetCIDR, mode)
+		args := gomaasapi.LinkSubnetArgs{
+			Mode:   gomaasapi.InterfaceLinkMode(strings.ToUpper(mode)),
+			Subnet: subnet,
+		}
+		err = iface.LinkSubnet(args)
+		if err != nil {
+			return err
 		}
 	}
+
+	//for i := 0; i < d.Get("interface.#").(int); i++ {
+	//	name := d.Get(fmt.Sprintf("interface.%d.name", i)).(string)
+	//	log.Printf("[DEBUG] [updateMachineInterfaces] Updating interface '%s'", name)
+	//	if bondBlock, ok := d.GetOk(fmt.Sprintf("interface.%d.name.bond.0", i)); ok {
+	//		bondParams := bondBlock.(*schema.ResourceData)
+	//		log.Printf("[DEBUG] [updateMachineInterfaces] Creating bond %s", name)
+	//		// create a new bond device
+	//		args := gomaasapi.CreateMachineBondArgs{
+	//			UpdateInterfaceArgs: gomaasapi.UpdateInterfaceArgs{
+	//				BondMode:           bondParams.Get("mode").(string),
+	//				MACAddress:         bondParams.Get("mac_address").(string),
+	//				BondMiimon:         bondParams.Get("miimon").(int),
+	//				BondDownDelay:      bondParams.Get("downdelay").(int),
+	//				BondUpDelay:        bondParams.Get("updelay").(int),
+	//				BondLACPRate:       bondParams.Get("lacp_rate").(string),
+	//				BondXmitHashPolicy: bondParams.Get("xmit_hash_policy").(string),
+	//			},
+	//			Parents: []gomaasapi.Interface{},
+	//		}
+
+	//		if parents, ok := bondParams.GetOk("parents"); ok {
+	//			for _, parent := range parents.([]interface{}) {
+	//				args.Parents = append(args.Parents, parent.(gomaasapi.Interface))
+	//			}
+	//		}
+
+	//		bondIface, err := machine.CreateBond(args)
+	//		if err != nil {
+	//			return fmt.Errorf("Failed to create bond: %v", err)
+	//		}
+	//		nameToIface[name] = bondIface
+	//	}
+
+	//	if iface, ok := nameToIface[name]; ok {
+	//		// link the device to a subnet
+	//		subnetCIDR := d.Get(fmt.Sprintf("interface.%d.subnet", i)).(string)
+	//		subnet, ok := cidrToSubnet[subnetCIDR]
+	//		if !ok {
+	//			return fmt.Errorf("No subnet CIDR %s exists", subnetCIDR)
+	//		}
+
+	//		// unlink first
+	//		err := iface.UnlinkSubnet(subnet)
+	//		if err != nil {
+	//			return err
+	//		}
+
+	//		// now link the correct subnet
+	//		mode := d.Get(fmt.Sprintf("interface.%d.mode", i)).(string)
+	//		log.Printf("[DEBUG] [updateMachineInterfaces] Linking interface %s to subnet %s (mode: %s)", name, subnetCIDR, mode)
+	//		args := gomaasapi.LinkSubnetArgs{
+	//			Mode:   gomaasapi.InterfaceLinkMode(mode),
+	//			Subnet: subnet,
+	//		}
+
+	//		err = iface.LinkSubnet(args)
+	//		if err != nil {
+	//			return err
+	//		}
+	//	}
+	//}
 
 	return nil
 }
@@ -461,7 +549,10 @@ func buildInterface(iface gomaasapi.Interface) map[string]interface{} {
 	ifaceTf["name"] = iface.Name()
 	if len(iface.Links()) > 0 {
 		ifaceTf["mode"] = iface.Links()[0].Mode()
-		ifaceTf["subnet"] = iface.Links()[0].Subnet().CIDR()
+		subnet := iface.Links()[0].Subnet()
+		if subnet != nil {
+			ifaceTf["subnet"] = iface.Links()[0].Subnet().CIDR()
+		}
 	}
 	if iface.Type() == "bond" {
 		bond := []map[string]interface{}{}
@@ -510,6 +601,13 @@ func resourceMAASMachineUpdate(d *schema.ResourceData, meta interface{}) error {
 	}
 	if needsUpdate {
 		err := machine.Update(updateArgs)
+		if err != nil {
+			return err
+		}
+	}
+
+	if d.HasChange("interface") {
+		err = updateMachineInterfaces(d, controller, machine)
 		if err != nil {
 			return err
 		}
