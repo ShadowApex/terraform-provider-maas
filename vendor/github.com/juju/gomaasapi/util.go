@@ -25,3 +25,11 @@ func EnsureTrailingSlash(URL string) string {
 	}
 	return URL + "/"
 }
+
+// EnsureNoTrailingSlash removes the slash at the end of the given string unless
+// one already doesn't exist.
+// This is used for certain MAAS endpoints (such as partitions), which only work
+// when there is no trailing slash.
+func EnsureNoTrailingSlash(URL string) string {
+	return strings.TrimSuffix(URL, "/")
+}

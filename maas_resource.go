@@ -280,33 +280,38 @@ func resourceMAASMachine() *schema.Resource {
 							Type:     schema.TypeString,
 							Optional: true,
 							ForceNew: false,
+							Computed: false,
 						},
-						// These are static informational things
-						//"model": {
-						//	Type:     schema.TypeString,
-						//	Optional: true,
-						//},
-						//"size": {
-						//	Type:     schema.TypeInt,
-						//	Required: true,
-						//	ForceNew: true,
-						//},
-						//"block_size": {
-						//	Type:     schema.TypeInt,
-						//	Required: true,
-						//	ForceNew: true,
-						//},
+						"model": {
+							Type:     schema.TypeString,
+							Optional: true,
+							Computed: false,
+						},
+						"size": {
+							Type:     schema.TypeInt,
+							ForceNew: false,
+							Required: true,
+							Computed: false,
+						},
+						"block_size": {
+							Type:     schema.TypeInt,
+							ForceNew: false,
+							Required: true,
+							Computed: false,
+						},
 						"id": {
 							Type:     schema.TypeString,
-							Computed: true,
+							Optional: true,
 						},
 						"uuid": {
 							Type:     schema.TypeString,
-							Computed: true,
+							Optional: true,
+							Computed: false,
 						},
 						"path": {
 							Type:     schema.TypeString,
-							Computed: true,
+							Required: true,
+							Computed: false,
 						},
 						"partition": {
 							Type:     schema.TypeSet,

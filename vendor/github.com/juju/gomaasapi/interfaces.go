@@ -433,6 +433,9 @@ type StorageDevice interface {
 	UUID() string
 	Tags() []string
 
+	// Delete removes the storage device.
+	Delete() error
+
 	// FileSystem may be nil if not mounted.
 	FileSystem() FileSystem
 
@@ -474,6 +477,7 @@ type VolumeGroup interface {
 	Name() string
 	Size() uint64
 	UUID() string
+	Delete() error
 	Devices() []BlockDevice
 	CreateLogicalVolume(CreateLogicalVolumeArgs) (BlockDevice, error)
 }

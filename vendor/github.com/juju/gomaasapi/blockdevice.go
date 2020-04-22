@@ -126,6 +126,23 @@ func (b *blockdevice) Partitions() []Partition {
 	return result
 }
 
+// Delete implements BlockDevice.
+func (b *blockdevice) Delete() error {
+	err := b.controller.delete(b.resourceURI)
+	if err != nil {
+		if svrErr, ok := errors.Cause(err).(ServerError); ok {
+			switch svrErr.StatusCode {
+			case http.StatusNotFound:
+				return errors.Wrap(err, NewNoMatchError(svrErr.BodyMessage))
+			case http.StatusForbidden:
+				return errors.Wrap(err, NewPermissionError(svrErr.BodyMessage))
+			}
+		}
+		return NewUnexpectedError(err)
+	}
+	return nil
+}
+
 // FormatStorageDeviceArgs are options for formatting BlockDevices and Partitions
 type FormatStorageDeviceArgs struct {
 	FSType string // Required. Type of filesystem.
@@ -148,7 +165,7 @@ func (b *blockdevice) Format(args FormatStorageDeviceArgs) error {
 	}
 
 	params := NewURLParams()
-	params.MaybeAdd("fs_type", args.FSType)
+	params.MaybeAdd("fstype", args.FSType)
 	params.MaybeAdd("uuid", args.UUID)
 
 	result, err := b.controller.post(b.resourceURI, "format", params.Values)
@@ -170,6 +187,7 @@ func (b *blockdevice) Format(args FormatStorageDeviceArgs) error {
 	if err != nil {
 		return errors.Trace(err)
 	}
+	blockDevice.controller = b.controller
 	b.updateFrom(blockDevice)
 	return nil
 }

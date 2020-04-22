@@ -978,5 +978,6 @@ func (m *machine) CreateVolumeGroup(args CreateVolumeGroupArgs) (VolumeGroup, er
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
+	response.controller = m.controller
 	return response, nil
 }

@@ -44,6 +44,23 @@ func (vg *volumegroup) Devices() []BlockDevice {
 	return result
 }
 
+// Delete implements VolumeGroup.
+func (v *volumegroup) Delete() error {
+	err := v.controller.delete(v.resourceURI)
+	if err != nil {
+		if svrErr, ok := errors.Cause(err).(ServerError); ok {
+			switch svrErr.StatusCode {
+			case http.StatusNotFound:
+				return errors.Wrap(err, NewNoMatchError(svrErr.BodyMessage))
+			case http.StatusForbidden:
+				return errors.Wrap(err, NewPermissionError(svrErr.BodyMessage))
+			}
+		}
+		return NewUnexpectedError(err)
+	}
+	return nil
+}
+
 // CreateLogicalVolumeArgs creates a logical volume in a volume group
 type CreateLogicalVolumeArgs struct {
 	Name string // Required. Name of the logical volume.
@@ -88,10 +105,35 @@ func (vg *volumegroup) CreateLogicalVolume(args CreateLogicalVolumeArgs) (BlockD
 		return nil, NewUnexpectedError(err)
 	}
 
+	// TODO: This is a hack. We should have a 'readLogicalVolume' method similar
+	// to how 'readBlockDevice' works.
+	resultMap, ok := result.(map[string]interface{})
+	if !ok {
+		return nil, NewUnexpectedError(fmt.Errorf("invalid response from server when creating logical volume"))
+	}
+	resourceURI, ok := resultMap["resource_uri"]
+	if !ok {
+		return nil, NewUnexpectedError(fmt.Errorf("no resource uri was returned when creating logical volume"))
+	}
+	result, err = vg.controller.get(resourceURI.(string))
+	if err != nil {
+		if svrErr, ok := errors.Cause(err).(ServerError); ok {
+			switch svrErr.StatusCode {
+			case http.StatusNotFound:
+				return nil, errors.Wrap(err, NewBadRequestError(svrErr.BodyMessage))
+			case http.StatusForbidden:
+				return nil, errors.Wrap(err, NewPermissionError(svrErr.BodyMessage))
+			case http.StatusServiceUnavailable:
+				return nil, errors.Wrap(err, NewCannotCompleteError(svrErr.BodyMessage))
+			}
+		}
+		return nil, NewUnexpectedError(err)
+	}
 	device, err := readBlockDevice(vg.controller.apiVersion, result)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
+	device.controller = vg.controller
 	return device, nil
 }
 

@@ -965,7 +965,15 @@ func (c *controller) postFile(path, op string, params url.Values, fileContent []
 }
 
 func (c *controller) _postRaw(path, op string, params url.Values, files map[string][]byte) ([]byte, error) {
-	path = EnsureTrailingSlash(path)
+	// NOTE: Adding a trailing slash to partition requests breaks.
+	switch {
+	case strings.Contains(path, "partitions"):
+		path = EnsureTrailingSlash(path)
+	case strings.Contains(path, "partition"):
+		path = EnsureNoTrailingSlash(path)
+	default:
+		path = EnsureTrailingSlash(path)
+	}
 	requestID := nextRequestID()
 	if logger.IsTraceEnabled() {
 		opArg := ""
@@ -985,7 +993,13 @@ func (c *controller) _postRaw(path, op string, params url.Values, files map[stri
 }
 
 func (c *controller) delete(path string) error {
-	path = EnsureTrailingSlash(path)
+	// NOTE: Adding a trailing slash to partitions breaks delete requests.
+	switch {
+	case strings.Contains(path, "partition"):
+		path = EnsureNoTrailingSlash(path)
+	default:
+		path = EnsureTrailingSlash(path)
+	}
 	requestID := nextRequestID()
 	logger.Tracef("request %x: DELETE %s%s", requestID, c.client.APIURL, path)
 	err := c.client.Delete(&url.URL{Path: path})

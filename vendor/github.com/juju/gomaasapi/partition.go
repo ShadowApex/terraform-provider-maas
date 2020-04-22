@@ -79,13 +79,30 @@ func (p *partition) Tags() []string {
 	return p.tags
 }
 
+// Delete implements Partition.
+func (p *partition) Delete() error {
+	err := p.controller.delete(p.resourceURI)
+	if err != nil {
+		if svrErr, ok := errors.Cause(err).(ServerError); ok {
+			switch svrErr.StatusCode {
+			case http.StatusNotFound:
+				return errors.Wrap(err, NewNoMatchError(svrErr.BodyMessage))
+			case http.StatusForbidden:
+				return errors.Wrap(err, NewPermissionError(svrErr.BodyMessage))
+			}
+		}
+		return NewUnexpectedError(err)
+	}
+	return nil
+}
+
 func (p *partition) Format(args FormatStorageDeviceArgs) error {
 	if err := args.Validate(); err != nil {
 		return errors.Trace(err)
 	}
 
 	params := NewURLParams()
-	params.MaybeAdd("fs_type", args.FSType)
+	params.MaybeAdd("fstype", args.FSType)
 	params.MaybeAdd("uuid", args.UUID)
 	params.MaybeAdd("label", args.Label)
 
