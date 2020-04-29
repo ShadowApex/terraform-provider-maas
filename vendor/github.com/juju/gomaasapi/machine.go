@@ -307,13 +307,10 @@ func (m *machine) Devices(args DevicesArgs) ([]Device, error) {
 
 // UpdateMachineArgs is arguments for machine.Update
 type UpdateMachineArgs struct {
-	Hostname      string
-	Domain        string
-	PowerType     string
-	PowerAddress  string
-	PowerUser     string
-	PowerPassword string
-	PowerOpts     map[string]string
+	Hostname  string
+	Domain    string
+	PowerType string
+	PowerOpts map[string]string
 }
 
 // Validate ensures the arguments are acceptable
@@ -327,9 +324,6 @@ func (a *UpdateMachineArgs) ToParams() *URLParams {
 	params.MaybeAdd("hostname", a.Hostname)
 	params.MaybeAdd("domain", a.Domain)
 	params.MaybeAdd("power_type", a.PowerType)
-	params.MaybeAdd("power_parameters_power_user", a.PowerUser)
-	params.MaybeAdd("power_parameters_power_password", a.PowerUser)
-	params.MaybeAdd("power_parameters_power_address", a.PowerAddress)
 	if a.PowerOpts != nil {
 		for k, v := range a.PowerOpts {
 			params.MaybeAdd(fmt.Sprintf("power_parameters_%s", k), v)

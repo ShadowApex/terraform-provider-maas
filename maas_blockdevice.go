@@ -127,6 +127,11 @@ func updateMachineBlockDevices(d *schema.ResourceData, controller gomaasapi.Cont
 			fsType := lvDef["fstype"].(string)
 			mountpoint := lvDef["mountpoint"].(string)
 
+			// Ensure that the logical volume is named correctly.
+			if !strings.HasPrefix(name, fmt.Sprintf("%s-", vg.Name())) {
+				return fmt.Errorf("logical volume '%s' must have a name that starts with '%s-'", name, vg.Name())
+			}
+
 			// Create the logical volume
 			log.Printf("[DEBUG] [updateMachineBlockDevices] Creating logical volume '%s' on '%s'", name, vg.Name())
 			lv, err := vg.CreateLogicalVolume(gomaasapi.CreateLogicalVolumeArgs{

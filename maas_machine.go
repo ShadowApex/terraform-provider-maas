@@ -52,18 +52,6 @@ func makeUpdateMachineArgs(d *schema.ResourceData) gomaasapi.UpdateMachineArgs {
 			args.PowerType = ptype.(string)
 		}
 
-		if user, ok := d.GetOk(powerPrefix + ".user"); ok {
-			args.PowerUser = user.(string)
-		}
-
-		if password, ok := d.GetOk(powerPrefix + ".password"); ok {
-			args.PowerPassword = password.(string)
-		}
-
-		if address, ok := d.GetOk(powerPrefix + ".address"); ok {
-			args.PowerAddress = address.(string)
-		}
-
 		if custom, ok := d.GetOk(powerPrefix + ".custom"); ok {
 			values := custom.(map[string]interface{})
 			for k, v := range values {
@@ -310,6 +298,10 @@ func resourceMAASMachineUpdate(d *schema.ResourceData, meta interface{}) error {
 		updateArgs.Domain = d.Get("domain").(string)
 		needsUpdate = true
 	}
+	if d.HasChange("power") {
+		updateMachinePower(d, &updateArgs)
+		needsUpdate = true
+	}
 	if needsUpdate {
 		err := machine.Update(updateArgs)
 		if err != nil {
@@ -381,6 +373,20 @@ func resourceMAASMachineUpdate(d *schema.ResourceData, meta interface{}) error {
 
 	log.Printf("[DEBUG] Done Modifying machine %s", d.Id())
 	return nil
+}
+
+func updateMachinePower(d *schema.ResourceData, updateArgs *gomaasapi.UpdateMachineArgs) {
+	updateArgs.PowerType = "manual"
+	powerDef := d.Get("power").(*schema.Set)
+	for _, item := range powerDef.List() {
+		power := item.(map[string]interface{})
+		powerOpts := map[string]string{}
+		updateArgs.PowerType = power["type"].(string)
+		for key, value := range power["custom"].(map[string]interface{}) {
+			powerOpts[key] = value.(string)
+		}
+		updateArgs.PowerOpts = powerOpts
+	}
 }
 
 // resourceMAASDeploymentDelete will release the commisioning
